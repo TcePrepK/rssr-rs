@@ -1,0 +1,170 @@
+use ratatui::{
+    layout::Rect,
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem},
+    Frame,
+};
+
+use ratatui::prelude::Stylize;
+
+use crate::{
+    app::App,
+    models::{AppState, SettingsItem},
+};
+
+use super::{border_set, BASE, GREEN, MAUVE, MANTLE, PEACH, RED, SUBTEXT0, SURFACE0, TEXT};
+
+pub(super) fn draw_settings_tab(f: &mut Frame, app: &App, area: Rect) {
+    match app.state {
+        AppState::SettingsList
+        | AppState::OPMLExportPath
+        | AppState::OPMLImportPath
+        | AppState::ClearData
+        | AppState::ClearArticleCache => draw_settings(f, app, area),
+        _ => {}
+    }
+}
+
+fn format_cache_size(bytes: u64) -> String {
+    if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes == 0 {
+        "empty".to_string()
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn draw_settings(f: &mut Frame, app: &App, area: Rect) {
+    enum Row {
+        SectionHeader { label: &'static str, is_last: bool },
+        Item { item: SettingsItem, label: &'static str, in_last: bool },
+        Toggle { item: SettingsItem, label: &'static str, in_last: bool, on: bool },
+        CacheItem { in_last: bool, size_label: String },
+        Spacer,
+    }
+
+    let save = app.user_data.save_article_content;
+    let eager = app.user_data.eager_article_fetch;
+    let rounded = app.user_data.border_rounded;
+    let cache_label = format_cache_size(app.article_cache_size);
+    let rows = [
+        Row::SectionHeader { label: " Data", is_last: false },
+        Row::Item { item: SettingsItem::ImportOpml, label: "[ Import OPML ]", in_last: false },
+        Row::Item { item: SettingsItem::ExportOpml, label: "[ Export OPML ]", in_last: false },
+        Row::Item { item: SettingsItem::ClearData, label: "[ Clear All Data ]", in_last: false },
+        Row::Spacer,
+        Row::SectionHeader { label: " Article Storage", is_last: false },
+        Row::Toggle {
+            item: SettingsItem::SaveArticleContent,
+            label: "[ Save Article Content ]",
+            in_last: false,
+            on: save,
+        },
+        Row::CacheItem { in_last: false, size_label: cache_label },
+        Row::Spacer,
+        Row::SectionHeader { label: " Fetching", is_last: false },
+        Row::Toggle {
+            item: SettingsItem::EagerArticleFetch,
+            label: "[ Eager Article Fetch ]",
+            in_last: true,
+            on: eager,
+        },
+        Row::Spacer,
+        Row::SectionHeader { label: " Appearance", is_last: true },
+        Row::Toggle {
+            item: SettingsItem::BorderStyle,
+            label: "[ Rounded Borders ]",
+            in_last: true,
+            on: rounded,
+        },
+    ];
+
+    let list_items: Vec<ListItem> = rows
+        .iter()
+        .map(|row| match row {
+            Row::SectionHeader { label, is_last } => {
+                let connector = if *is_last {
+                    if app.user_data.border_rounded { " ╰─" } else { " └─" }
+                } else {
+                    " ├─"
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(connector, Style::default().fg(SURFACE0)),
+                    Span::styled(*label, Style::default().fg(PEACH).add_modifier(Modifier::BOLD)),
+                ]))
+            }
+            Row::Item { item, label, in_last } => {
+                let prefix = if *in_last { "     " } else { " │   " };
+                let selected = app.settings_selected == *item;
+                let style = if selected {
+                    Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(TEXT)
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(SURFACE0)),
+                    Span::styled(*label, style),
+                ]))
+            }
+            Row::Toggle { item, label, in_last, on } => {
+                let prefix = if *in_last { "     " } else { " │   " };
+                let selected = app.settings_selected == *item;
+                let base_style = if selected {
+                    Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(TEXT)
+                };
+                let badge_style = if selected {
+                    Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD)
+                } else if *on {
+                    Style::default().fg(GREEN).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(SUBTEXT0)
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(SURFACE0)),
+                    Span::styled(*label, base_style),
+                    Span::styled(if *on { "  ON " } else { "  OFF " }, badge_style),
+                ]))
+            }
+            Row::CacheItem { in_last, size_label } => {
+                let prefix = if *in_last { "     " } else { " │   " };
+                let selected = app.settings_selected == SettingsItem::ClearArticleCache;
+                let base_style = if selected {
+                    Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(TEXT)
+                };
+                let badge_style = if selected {
+                    Style::default().fg(MANTLE).bg(MAUVE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(RED)
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(SURFACE0)),
+                    Span::styled("[ Clear Article Cache ]", base_style),
+                    Span::styled(format!("  {} ", size_label), badge_style),
+                ]))
+            }
+            Row::Spacer => {
+                ListItem::new(Line::from(Span::styled(" │", Style::default().fg(SURFACE0))))
+            }
+        })
+        .collect();
+
+    let block = Block::default()
+        .border_set(border_set(app.user_data.border_rounded))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(SURFACE0))
+        .bg(BASE)
+        .title(Span::styled(
+            " Settings ",
+            Style::default().fg(PEACH).add_modifier(Modifier::BOLD),
+        ));
+
+    f.render_widget(List::new(list_items).block(block), area);
+}
