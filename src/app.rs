@@ -125,6 +125,10 @@ impl App {
             })
             .unwrap_or(0);
 
+        let initial_editor_cursor = initial_items.iter()
+            .position(|item| matches!(item, FeedTreeItem::Feed { .. }))
+            .unwrap_or(0);
+
         Self {
             state: AppState::FeedList,
             feeds,
@@ -158,7 +162,7 @@ impl App {
             sidebar_collapsed: HashSet::new(),
             sidebar_cursor: 0,
             article_cache_size: article_cache_size(),
-            editor_cursor: 0,
+            editor_cursor: initial_editor_cursor,
             editor_collapsed: HashSet::new(),
             editor_mode: FeedEditorMode::Normal,
             editor_input: String::new(),
@@ -254,26 +258,22 @@ impl App {
                 if self.editor_panel == EditorPanel::Categories {
                     let cats = visible_cat_only_items(&self.categories, &self.feeds, &self.editor_collapsed);
                     if !cats.is_empty() {
-                        self.editor_cat_cursor = (self.editor_cat_cursor + 1) % cats.len();
+                        let items = visible_tree_items(&self.categories, &self.feeds, &self.editor_collapsed);
+                        let is_cat_moving = self.editor_moving_category(&items);
+                        let wrap_len = if is_cat_moving { cats.len() + 1 } else { cats.len() };
+                        self.editor_cat_cursor = (self.editor_cat_cursor + 1) % wrap_len;
                     }
                 } else {
+                    // Feeds panel: navigate only through Feed items
                     let items =
                         visible_tree_items(&self.categories, &self.feeds, &self.editor_collapsed);
-                    if !items.is_empty() {
-                        let skip_feeds = self.editor_moving_category(&items);
-                        let wrap_len = if skip_feeds { items.len() + 1 } else { items.len() };
-                        let mut next = (self.editor_cursor + 1) % wrap_len;
-                        if skip_feeds {
-                            let mut attempts = items.len();
-                            while attempts > 0
-                                && next < items.len()
-                                && matches!(items.get(next), Some(FeedTreeItem::Feed { .. }))
-                            {
-                                next = (next + 1) % wrap_len;
-                                attempts -= 1;
-                            }
-                        }
-                        self.editor_cursor = next;
+                    let feed_indices: Vec<usize> = items.iter().enumerate()
+                        .filter(|(_, item)| matches!(item, FeedTreeItem::Feed { .. }))
+                        .map(|(i, _)| i)
+                        .collect();
+                    if !feed_indices.is_empty() {
+                        let cur = feed_indices.iter().position(|&i| i == self.editor_cursor).unwrap_or(0);
+                        self.editor_cursor = feed_indices[(cur + 1) % feed_indices.len()];
                     }
                 }
             }
@@ -338,28 +338,22 @@ impl App {
                 if self.editor_panel == EditorPanel::Categories {
                     let cats = visible_cat_only_items(&self.categories, &self.feeds, &self.editor_collapsed);
                     if !cats.is_empty() {
-                        self.editor_cat_cursor =
-                            self.editor_cat_cursor.checked_sub(1).unwrap_or(cats.len() - 1);
+                        let items = visible_tree_items(&self.categories, &self.feeds, &self.editor_collapsed);
+                        let is_cat_moving = self.editor_moving_category(&items);
+                        let wrap_len = if is_cat_moving { cats.len() + 1 } else { cats.len() };
+                        self.editor_cat_cursor = self.editor_cat_cursor.checked_sub(1).unwrap_or(wrap_len - 1);
                     }
                 } else {
+                    // Feeds panel: navigate only through Feed items
                     let items =
                         visible_tree_items(&self.categories, &self.feeds, &self.editor_collapsed);
-                    if !items.is_empty() {
-                        let skip_feeds = self.editor_moving_category(&items);
-                        let wrap_len = if skip_feeds { items.len() + 1 } else { items.len() };
-                        let mut prev =
-                            self.editor_cursor.checked_sub(1).unwrap_or(wrap_len - 1);
-                        if skip_feeds {
-                            let mut attempts = items.len();
-                            while attempts > 0
-                                && prev < items.len()
-                                && matches!(items.get(prev), Some(FeedTreeItem::Feed { .. }))
-                            {
-                                prev = prev.checked_sub(1).unwrap_or(wrap_len - 1);
-                                attempts -= 1;
-                            }
-                        }
-                        self.editor_cursor = prev;
+                    let feed_indices: Vec<usize> = items.iter().enumerate()
+                        .filter(|(_, item)| matches!(item, FeedTreeItem::Feed { .. }))
+                        .map(|(i, _)| i)
+                        .collect();
+                    if !feed_indices.is_empty() {
+                        let cur = feed_indices.iter().position(|&i| i == self.editor_cursor).unwrap_or(0);
+                        self.editor_cursor = feed_indices[cur.checked_sub(1).unwrap_or(feed_indices.len() - 1)];
                     }
                 }
             }
@@ -486,8 +480,8 @@ impl App {
 
     /// True when currently moving a category — used to skip feeds during navigation.
     fn editor_moving_category(&self, items: &[FeedTreeItem]) -> bool {
-        if let FeedEditorMode::Moving { original_cursor, .. } = &self.editor_mode {
-            matches!(items.get(*original_cursor), Some(FeedTreeItem::Category { .. }))
+        if let FeedEditorMode::Moving { origin_render_idx, .. } = &self.editor_mode {
+            matches!(items.get(*origin_render_idx), Some(FeedTreeItem::Category { .. }))
         } else {
             false
         }

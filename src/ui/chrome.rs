@@ -134,7 +134,7 @@ pub(super) fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
             " [↑/↓] Navigate   [Enter] Open   [Tab/Shift+Tab] Switch Tab   [q] Quit "
         }
         AppState::FeedEditor => {
-            " [↑/↓] Navigate   [Tab] Switch Panel   [Enter] Toggle   [Space] Move (Feeds)   [a] Add Feed   [n] New Category   [r] Rename   [d] Delete   [Esc] Back "
+            " [↑/↓] Navigate   [Tab] Switch Panel   [Enter] Toggle   [Space] Move   [a] Add Feed   [n] New Category   [r] Rename   [d] Delete   [Esc] Back "
         }
         AppState::FeedEditorRename => " [Enter] Confirm   [Esc] Cancel ",
         AppState::FeedList => {

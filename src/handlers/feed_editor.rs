@@ -76,7 +76,7 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
             _ => {}
         },
         AppState::FeedEditor => {
-            // ── Pending category-delete confirmation (left panel) ──────────────
+            // ── Pending category-delete confirmation (right panel) ─────────────
             if let Some((cat_id, _)) = app.editor_delete_cat {
                 match key.code {
                     KeyCode::Enter => {
@@ -91,6 +91,8 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
                         if app.editor_cat_cursor >= new_len && new_len > 0 {
                             app.editor_cat_cursor = new_len - 1;
                         }
+                        // Also clamp the feeds panel cursor since deleted feeds shift the tree.
+                        clamp_editor_cursor_to_feed(app);
                     }
                     KeyCode::Esc => {
                         app.editor_delete_cat = None;
@@ -102,19 +104,44 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
             }
 
             match &app.editor_mode.clone() {
-                // ── Right panel: Moving mode ───────────────────────────────────
+                // ── Moving mode ───────────────────────────────────────────────
                 FeedEditorMode::Moving { origin_render_idx, original_cursor } => {
                     let origin = *origin_render_idx;
                     let orig = *original_cursor;
+                    let is_cat_move = {
+                        let items = visible_tree_items(
+                            &app.categories,
+                            &app.feeds,
+                            &app.editor_collapsed,
+                        );
+                        matches!(items.get(origin), Some(FeedTreeItem::Category { .. }))
+                    };
                     match key.code {
                         KeyCode::Char('j') | KeyCode::Down => app.next(),
                         KeyCode::Char('k') | KeyCode::Up => app.previous(),
-                        KeyCode::Enter => {
-                            apply_move(app, origin);
-                            app.editor_mode = FeedEditorMode::Normal;
+                        KeyCode::Char(' ') => {
+                            if is_cat_move {
+                                let new_pos =
+                                    apply_category_move(app, origin, app.editor_cat_cursor);
+                                if let Some(pos) = new_pos {
+                                    app.editor_cat_cursor = pos;
+                                }
+                                app.editor_mode = FeedEditorMode::Normal;
+                                // Stays on Categories panel
+                            } else {
+                                let new_cursor = apply_move(app, origin);
+                                if let Some(pos) = new_cursor {
+                                    app.editor_cursor = pos;
+                                }
+                                app.editor_mode = FeedEditorMode::Normal;
+                            }
                         }
                         KeyCode::Esc => {
-                            app.editor_cursor = orig;
+                            if is_cat_move {
+                                app.editor_cat_cursor = orig; // restore cat cursor
+                            } else {
+                                app.editor_cursor = orig;
+                            }
                             app.editor_mode = FeedEditorMode::Normal;
                         }
                         _ => {}
@@ -124,14 +151,17 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
                     // Tab always switches panel focus.
                     if key.code == KeyCode::Tab {
                         app.editor_panel = match app.editor_panel {
-                            EditorPanel::Categories => EditorPanel::Feeds,
+                            EditorPanel::Categories => {
+                                clamp_editor_cursor_to_feed(app);
+                                EditorPanel::Feeds
+                            }
                             EditorPanel::Feeds => EditorPanel::Categories,
                         };
                         return;
                     }
 
                     match app.editor_panel {
-                        // ── Left panel: category manager ──────────────────────
+                        // ── Right panel: categories only ──────────────────────
                         EditorPanel::Categories => match key.code {
                             KeyCode::Char('j') | KeyCode::Down => app.next(),
                             KeyCode::Char('k') | KeyCode::Up => app.previous(),
@@ -166,13 +196,6 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
                                     } else {
                                         None
                                     };
-                                // Point right-panel cursor to the end of this category for rendering.
-                                let full = visible_tree_items(
-                                    &app.categories,
-                                    &app.feeds,
-                                    &app.editor_collapsed,
-                                );
-                                app.editor_cursor = full.len(); // past end = append
                                 app.editor_input.clear();
                                 app.editor_mode = FeedEditorMode::NewCategory { parent_id };
                                 app.state = AppState::FeedEditorRename;
@@ -198,7 +221,6 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
                                             matches!(item, FeedTreeItem::Category { id, .. } if *id == cat_id)
                                         })
                                         .unwrap_or(0);
-                                    app.editor_cursor = full_idx;
                                     app.editor_input = app
                                         .categories
                                         .iter()
@@ -233,36 +255,57 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
                                     ));
                                 }
                             }
-                            KeyCode::Esc | KeyCode::Char('q') => app.unselect(),
-                            _ => {}
-                        },
-                        // ── Right panel: feed + category tree ─────────────────
-                        EditorPanel::Feeds => match key.code {
-                            KeyCode::Char('j') | KeyCode::Down => app.next(),
-                            KeyCode::Char('k') | KeyCode::Up => app.previous(),
-                            KeyCode::Enter => {
-                                let items = visible_tree_items(
+                            KeyCode::Char(' ') => {
+                                // Start moving the selected category — stay on Categories panel.
+                                let cats = visible_cat_only_items(
                                     &app.categories,
                                     &app.feeds,
                                     &app.editor_collapsed,
                                 );
                                 if let Some(FeedTreeItem::Category { id, .. }) =
-                                    items.get(app.editor_cursor)
+                                    cats.get(app.editor_cat_cursor)
                                 {
-                                    let id = *id;
-                                    if app.editor_collapsed.contains(&id) {
-                                        app.editor_collapsed.remove(&id);
-                                    } else {
-                                        app.editor_collapsed.insert(id);
+                                    let cat_id = *id;
+                                    let full = visible_tree_items(
+                                        &app.categories,
+                                        &app.feeds,
+                                        &app.editor_collapsed,
+                                    );
+                                    if let Some(full_idx) = full.iter().position(|item| {
+                                        matches!(item, FeedTreeItem::Category { id, .. } if *id == cat_id)
+                                    }) {
+                                        app.editor_mode = FeedEditorMode::Moving {
+                                            origin_render_idx: full_idx,
+                                            original_cursor: app.editor_cat_cursor,
+                                        };
+                                        // DON'T change panel — stays on Categories
                                     }
                                 }
                             }
+                            KeyCode::Esc | KeyCode::Char('q') => app.unselect(),
+                            _ => {}
+                        },
+                        // ── Left panel: feeds only ────────────────────────────
+                        EditorPanel::Feeds => match key.code {
+                            KeyCode::Char('j') | KeyCode::Down => app.next(),
+                            KeyCode::Char('k') | KeyCode::Up => app.previous(),
                             KeyCode::Char(' ') => {
-                                let origin = app.editor_cursor;
-                                app.editor_mode = FeedEditorMode::Moving {
-                                    origin_render_idx: origin,
-                                    original_cursor: origin,
-                                };
+                                // Only start moving Feed items from the Feeds panel.
+                                let items = visible_tree_items(
+                                    &app.categories,
+                                    &app.feeds,
+                                    &app.editor_collapsed,
+                                );
+                                if matches!(
+                                    items.get(app.editor_cursor),
+                                    Some(FeedTreeItem::Feed { .. })
+                                ) {
+                                    let origin = app.editor_cursor;
+                                    app.editor_mode = FeedEditorMode::Moving {
+                                        origin_render_idx: origin,
+                                        original_cursor: origin,
+                                    };
+                                }
                             }
                             KeyCode::Char('a') => {
                                 let items = visible_tree_items(
@@ -271,28 +314,18 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
                                     &app.editor_collapsed,
                                 );
                                 let cursor_item = items.get(app.editor_cursor);
+                                // Cursor is always on a Feed item in the Feeds panel
                                 app.add_feed_target_category = match cursor_item {
-                                    Some(FeedTreeItem::Category { id, .. }) => Some(*id),
                                     Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
                                         app.feeds.get(*feeds_idx).and_then(|f| f.category_id)
                                     }
-                                    None => None,
+                                    _ => None,
                                 };
                                 app.add_feed_target_order = match cursor_item {
                                     Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
                                         app.feeds.get(*feeds_idx).map(|f| f.order + 1)
                                     }
-                                    Some(FeedTreeItem::Category { id, .. }) => {
-                                        let cat_id = *id;
-                                        let min = app
-                                            .feeds
-                                            .iter()
-                                            .filter(|f| f.category_id == Some(cat_id))
-                                            .map(|f| f.order)
-                                            .min();
-                                        Some(min.unwrap_or(0))
-                                    }
-                                    None => None,
+                                    _ => None,
                                 };
                                 app.input.clear();
                                 app.add_feed_step = AddFeedStep::Url;
@@ -301,50 +334,32 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
                                 app.add_feed_return_state = AppState::FeedEditor;
                                 app.state = AppState::AddFeed;
                             }
-                            KeyCode::Char('n') => {
-                                let items = visible_tree_items(
-                                    &app.categories,
-                                    &app.feeds,
-                                    &app.editor_collapsed,
-                                );
-                                let parent_id = match items.get(app.editor_cursor) {
-                                    Some(FeedTreeItem::Category { id, .. }) => Some(*id),
-                                    Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
-                                        app.feeds.get(*feeds_idx).and_then(|f| f.category_id)
-                                    }
-                                    None => None,
-                                };
-                                app.editor_input.clear();
-                                app.editor_mode = FeedEditorMode::NewCategory { parent_id };
-                                app.state = AppState::FeedEditorRename;
-                            }
                             KeyCode::Char('r') => {
+                                // Cursor is always on a Feed item — rename the feed.
                                 let items = visible_tree_items(
                                     &app.categories,
                                     &app.feeds,
                                     &app.editor_collapsed,
                                 );
-                                let current_name = match items.get(app.editor_cursor) {
-                                    Some(FeedTreeItem::Category { id, .. }) => app
-                                        .categories
-                                        .iter()
-                                        .find(|c| c.id == *id)
-                                        .map(|c| c.name.clone())
-                                        .unwrap_or_default(),
-                                    Some(FeedTreeItem::Feed { feeds_idx, .. }) => app
+                                if let Some(FeedTreeItem::Feed { feeds_idx, .. }) =
+                                    items.get(app.editor_cursor)
+                                {
+                                    let current_name = app
                                         .feeds
                                         .get(*feeds_idx)
                                         .map(|f| f.title.clone())
-                                        .unwrap_or_default(),
-                                    None => String::new(),
-                                };
-                                app.editor_input = current_name;
-                                app.editor_mode = FeedEditorMode::Renaming {
-                                    render_idx: app.editor_cursor,
-                                };
-                                app.state = AppState::FeedEditorRename;
+                                        .unwrap_or_default();
+                                    app.editor_input = current_name;
+                                    app.editor_mode = FeedEditorMode::Renaming {
+                                        render_idx: app.editor_cursor,
+                                    };
+                                    app.state = AppState::FeedEditorRename;
+                                }
                             }
-                            KeyCode::Char('d') => delete_at_cursor(app),
+                            KeyCode::Char('d') => {
+                                delete_at_cursor(app);
+                                clamp_editor_cursor_to_feed(app);
+                            }
                             KeyCode::Esc | KeyCode::Char('q') => app.unselect(),
                             _ => {}
                         },
@@ -357,34 +372,36 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
     }
 }
 
+/// Clamp `editor_cursor` to the nearest Feed item in the full tree.
+fn clamp_editor_cursor_to_feed(app: &mut App) {
+    let items = visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed);
+    let feed_indices: Vec<usize> = items
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| matches!(item, FeedTreeItem::Feed { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    if feed_indices.is_empty() {
+        app.editor_cursor = 0;
+        return;
+    }
+    app.editor_cursor = feed_indices
+        .iter()
+        .find(|&&i| i >= app.editor_cursor)
+        .or_else(|| feed_indices.last())
+        .copied()
+        .unwrap_or(0);
+}
+
 fn delete_at_cursor(app: &mut App) {
     let items = visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed);
-    match items.get(app.editor_cursor) {
-        Some(FeedTreeItem::Category { id, .. }) => {
-            let id = *id;
-            orphan_category_feeds(app, id);
-            remove_category_recursive(app, id);
-            let _ = save_categories(&app.categories);
+    // Feeds panel cursor is always on a Feed item (navigation skips categories).
+    if let Some(FeedTreeItem::Feed { feeds_idx, .. }) = items.get(app.editor_cursor) {
+        let idx = *feeds_idx;
+        if idx > 0 {
+            app.feeds.remove(idx);
             let _ = save_feeds(&app.feeds);
-            let new_len =
-                visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed).len();
-            if app.editor_cursor >= new_len && new_len > 0 {
-                app.editor_cursor = new_len - 1;
-            }
         }
-        Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
-            let idx = *feeds_idx;
-            if idx > 0 {
-                app.feeds.remove(idx);
-                let _ = save_feeds(&app.feeds);
-                let new_len =
-                    visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed).len();
-                if app.editor_cursor >= new_len && new_len > 0 {
-                    app.editor_cursor = new_len - 1;
-                }
-            }
-        }
-        None => {}
     }
 }
 
@@ -420,35 +437,6 @@ fn delete_category_recursive(app: &mut App, cat_id: CategoryId) {
     let _ = save_feeds(&app.feeds);
 }
 
-fn orphan_category_feeds(app: &mut App, cat_id: CategoryId) {
-    let children: Vec<CategoryId> = app
-        .categories
-        .iter()
-        .filter(|c| c.parent_id == Some(cat_id))
-        .map(|c| c.id)
-        .collect();
-    for child_id in children {
-        orphan_category_feeds(app, child_id);
-    }
-    for feed in app.feeds.iter_mut() {
-        if feed.category_id == Some(cat_id) {
-            feed.category_id = None;
-        }
-    }
-}
-
-fn remove_category_recursive(app: &mut App, cat_id: CategoryId) {
-    let children: Vec<CategoryId> = app
-        .categories
-        .iter()
-        .filter(|c| c.parent_id == Some(cat_id))
-        .map(|c| c.id)
-        .collect();
-    for child_id in children {
-        remove_category_recursive(app, child_id);
-    }
-    app.categories.retain(|c| c.id != cat_id);
-}
 
 /// Returns true if `ancestor_id` is an ancestor of (or equal to) `node_id`.
 fn is_ancestor_of(categories: &[Category], ancestor_id: CategoryId, node_id: CategoryId) -> bool {
@@ -465,84 +453,102 @@ fn is_ancestor_of(categories: &[Category], ancestor_id: CategoryId, node_id: Cat
     }
 }
 
-fn apply_move(app: &mut App, origin: usize) {
+/// Apply a category move: move `origin_full_idx` category to be a child of the category
+/// at `dest_cat_cursor` in the cats-only list (or virtual root if out of bounds).
+/// Returns the new `editor_cat_cursor` position for the moved category.
+fn apply_category_move(
+    app: &mut App,
+    origin_full_idx: usize,
+    dest_cat_cursor: usize,
+) -> Option<usize> {
+    let items = visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed);
+    let src_id = match items.get(origin_full_idx) {
+        Some(FeedTreeItem::Category { id, .. }) => *id,
+        _ => return None,
+    };
+
+    let cats = visible_cat_only_items(&app.categories, &app.feeds, &app.editor_collapsed);
+    let new_parent_id = if dest_cat_cursor >= cats.len() {
+        None // virtual root
+    } else {
+        match cats.get(dest_cat_cursor) {
+            Some(FeedTreeItem::Category { id, .. }) if *id == src_id => return None, // drop on self
+            Some(FeedTreeItem::Category { id, .. }) => Some(*id),
+            _ => None,
+        }
+    };
+
+    // Prevent cycle
+    if let Some(pid) = new_parent_id
+        && is_ancestor_of(&app.categories, src_id, pid)
+    {
+        return None;
+    }
+
+    if let Some(cat) = app.categories.iter_mut().find(|c| c.id == src_id) {
+        cat.parent_id = new_parent_id;
+    }
+
+    place_category_first_in_parent(&mut app.categories, src_id, new_parent_id);
+    let _ = save_categories(&app.categories);
+
+    let new_cats = visible_cat_only_items(&app.categories, &app.feeds, &app.editor_collapsed);
+    new_cats.iter().position(|item| {
+        matches!(item, FeedTreeItem::Category { id, .. } if *id == src_id)
+    })
+}
+
+/// Apply the pending feed move and return the new render-index of the moved feed (for cursor update).
+fn apply_move(app: &mut App, origin: usize) -> Option<usize> {
     let dest = app.editor_cursor;
 
     let items = visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed);
-    let Some(src_item) = items.get(origin) else {
-        return;
-    };
-    // dest == items.len() is the virtual root position (categories only).
+    let src_item = items.get(origin)?;
     let dest_item = items.get(dest);
 
-    if origin == dest && dest < items.len() {
-        return;
+    if origin == dest {
+        return None;
     }
 
-    match src_item.clone() {
-        FeedTreeItem::Feed { feeds_idx, .. } => {
-            let new_parent_cat = match dest_item {
-                Some(FeedTreeItem::Category { id, .. }) => Some(*id),
-                Some(FeedTreeItem::Feed { feeds_idx: di, .. }) => {
-                    app.feeds.get(*di).and_then(|f| f.category_id)
-                }
-                None => None,
-            };
-            // Vec index of the dest feed (if landing on a feed).
-            let dest_feed_vidx = match dest_item {
-                Some(FeedTreeItem::Feed { feeds_idx: di, .. }) => Some(*di),
-                _ => None,
-            };
+    // Feeds panel cursor is always on a Feed item; only feed moves use this function.
+    let FeedTreeItem::Feed { feeds_idx, .. } = src_item.clone() else {
+        return None;
+    };
 
-            // Move feed to new parent.
-            if let Some(feed) = app.feeds.get_mut(feeds_idx) {
-                feed.category_id = new_parent_cat;
-            }
-
-            // Rebuild sibling order: collect all feeds in new parent (excl. moved),
-            // find dest's position, insert moved after it, then reassign sequential orders.
-            place_feed_in_parent(&mut app.feeds, feeds_idx, dest_feed_vidx, new_parent_cat);
-
-            let _ = save_feeds(&app.feeds);
+    let new_parent_cat = match dest_item {
+        Some(FeedTreeItem::Category { id, .. }) => Some(*id),
+        Some(FeedTreeItem::Feed { feeds_idx: di, .. }) => {
+            app.feeds.get(*di).and_then(|f| f.category_id)
         }
-        FeedTreeItem::Category { id: src_id, .. } => {
-            // Onto a category → first child of that category.
-            // Virtual root (dest_item == None) → first root-level category.
-            let new_parent_id = match dest_item {
-                Some(FeedTreeItem::Category { id, .. }) => Some(*id),
-                _ => None,
-            };
+        None => None,
+    };
+    let dest_feed_vidx = match dest_item {
+        Some(FeedTreeItem::Feed { feeds_idx: di, .. }) => Some(*di),
+        _ => None,
+    };
 
-            // Prevent cycle: src cannot become a descendant of itself.
-            if let Some(pid) = new_parent_id
-                && is_ancestor_of(&app.categories, src_id, pid)
-            {
-                return;
-            }
-
-            // Set new parent.
-            if let Some(cat) = app.categories.iter_mut().find(|c| c.id == src_id) {
-                cat.parent_id = new_parent_id;
-            }
-
-            // Rebuild sibling order: insert moved category as first child (position 0),
-            // then reassign sequential orders.
-            place_category_first_in_parent(&mut app.categories, src_id, new_parent_id);
-
-            let _ = save_categories(&app.categories);
-        }
+    if let Some(feed) = app.feeds.get_mut(feeds_idx) {
+        feed.category_id = new_parent_cat;
     }
+
+    place_feed_in_parent(&mut app.feeds, feeds_idx, dest_feed_vidx, new_parent_cat);
+
+    let _ = save_feeds(&app.feeds);
+
+    let new_items = visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed);
+    new_items.iter().position(|item| {
+        matches!(item, FeedTreeItem::Feed { feeds_idx: fi, .. } if *fi == feeds_idx)
+    })
 }
 
 /// Insert `moved_idx` (feed Vec index) into `parent`'s feed list right after
-/// `dest_vidx` (or at the start if None), then reassign orders 0, 1, 2, …
+/// `dest_vidx` (or at the start if None), then reassign sequential orders.
 fn place_feed_in_parent(
     feeds: &mut [Feed],
     moved_idx: usize,
     dest_vidx: Option<usize>,
     parent: Option<CategoryId>,
 ) {
-    // All siblings except the moved feed, sorted by current order.
     let mut siblings: Vec<usize> = feeds
         .iter()
         .enumerate()
@@ -551,7 +557,6 @@ fn place_feed_in_parent(
         .collect();
     siblings.sort_by_key(|&i| feeds[i].order);
 
-    // Insert after dest (or at position 0 when landing on a category header).
     let insert_pos = match dest_vidx {
         Some(di) => siblings
             .iter()
@@ -568,13 +573,12 @@ fn place_feed_in_parent(
 }
 
 /// Insert `moved_id` (category id) as the first child of `parent`, then
-/// reassign orders 0, 1, 2, … among all siblings.
+/// reassign orders among all siblings.
 fn place_category_first_in_parent(
     categories: &mut [Category],
     moved_id: CategoryId,
     parent: Option<CategoryId>,
 ) {
-    // All siblings except the moved category, sorted by current order.
     let mut siblings: Vec<usize> = categories
         .iter()
         .enumerate()
@@ -583,7 +587,6 @@ fn place_category_first_in_parent(
         .collect();
     siblings.sort_by_key(|&i| categories[i].order);
 
-    // Moved category goes first.
     let moved_pos = categories.iter().position(|c| c.id == moved_id).unwrap();
     siblings.insert(0, moved_pos);
 
