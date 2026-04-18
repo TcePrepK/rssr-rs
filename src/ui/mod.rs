@@ -70,4 +70,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.state == AppState::ClearArticleCache {
         popups::draw_confirm_clear_cache(f, app);
     }
+    if let Some((cat_id, feed_count)) = app.editor_delete_cat {
+        popups::draw_confirm_delete_cat(f, app, cat_id, feed_count);
+    }
 }

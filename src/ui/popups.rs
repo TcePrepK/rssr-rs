@@ -8,7 +8,7 @@ use ratatui::{
 
 use ratatui::prelude::Stylize;
 
-use crate::{app::App, models::{AddFeedStep, AppState}};
+use crate::{app::App, models::{AddFeedStep, AppState, CategoryId}};
 
 use super::{border_set, BASE, BLUE, GREEN, MAUVE, SUBTEXT0, TEXT};
 
@@ -215,6 +215,62 @@ pub(super) fn draw_confirm_clear_cache(f: &mut Frame, app: &App) {
             Span::styled("Confirm   ", Style::default().fg(super::TEXT)),
             Span::styled("[Esc] ", Style::default().fg(GREEN).add_modifier(Modifier::BOLD)),
             Span::styled("Cancel", Style::default().fg(super::TEXT)),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(text).block(block), center);
+}
+
+pub(super) fn draw_confirm_delete_cat(f: &mut Frame, app: &App, cat_id: CategoryId, feed_count: usize) {
+    use super::RED;
+    let cat_name = app
+        .categories
+        .iter()
+        .find(|c| c.id == cat_id)
+        .map(|c| c.name.as_str())
+        .unwrap_or("?");
+    let body = if feed_count == 0 {
+        format!("  Delete category \"{cat_name}\"?")
+    } else {
+        format!("  Delete \"{cat_name}\" and {feed_count} feed(s) inside?")
+    };
+
+    let area = f.area();
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(38),
+            Constraint::Length(7),
+            Constraint::Percentage(38),
+        ])
+        .split(area);
+    let center = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(15),
+            Constraint::Percentage(70),
+            Constraint::Percentage(15),
+        ])
+        .split(vertical[1])[1];
+
+    f.render_widget(Clear, center);
+    let block = Block::default()
+        .border_set(border_set(app.user_data.border_rounded))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(RED))
+        .bg(BASE)
+        .title(Span::styled(
+            " ⚠  Delete Category ",
+            Style::default().fg(RED).add_modifier(Modifier::BOLD),
+        ));
+    let text = vec![
+        Line::from(""),
+        Line::from(Span::styled(body, Style::default().fg(TEXT))),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  [Enter] ", Style::default().fg(RED).add_modifier(Modifier::BOLD)),
+            Span::styled("Confirm   ", Style::default().fg(TEXT)),
+            Span::styled("[Esc] ", Style::default().fg(GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled("Cancel", Style::default().fg(TEXT)),
         ]),
     ];
     f.render_widget(Paragraph::new(text).block(block), center);
