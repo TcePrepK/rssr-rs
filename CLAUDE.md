@@ -21,17 +21,43 @@ rule), fix it in the same commit.
 
 ---
 
+## Vault
+
+Project knowledge lives in `vault/`. The LLM maintains it; humans drop raw inputs into `vault/raw/`.
+
+```
+vault/
+├── INDEX.md          ← start here
+├── raw/              ← drop inputs here (articles, code dumps, notes)
+├── wiki/             ← LLM-maintained knowledge tree
+│   ├── INDEX.md      ← entry point for wiki
+│   ├── log.md        append-only operation log
+│   ├── project/      overview
+│   ├── architecture/ modules, state machine, event loop, keybindings, storage
+│   ├── models/       core types, navigation, events
+│   ├── ui/           theme
+│   ├── behaviors/    favorites, feed-tree, add-feed flow
+│   ├── workflow/     development, commits
+│   └── user/         preferences
+└── output/           ← LLM-generated artifacts
+```
+
+**Session start**: read `vault/wiki/INDEX.md`, navigate to relevant nodes as needed, then read `TASKS.md`.
+Use vault for architectural context; don't load the full tree — navigate to what the current task needs.
+
+---
+
 ## Task Workflow
 
-1. **On session start**: read `vault/wiki/INDEX.md`, navigate to relevant nodes as needed, then read `TASKS.md`. Pick up
+1. **On session start**: read vault (above), then read `TASKS.md`. Pick up
    the highest-priority incomplete item.
 2. **Priority indicators**: tasks marked with [!] are high-priority. Always prioritize these before non-flagged tasks
    within the same category.
 3. **Pick up work**: always take the highest-priority incomplete item first.
 4. **If anything is unclear**: stop and ask the user. Do not assume scope, layout, or behavior. Just ask directly in
    your response.
-5. **On completion**: move item from its category to **Completed** with a timestamp (e.g.,
-   `[2026-04-12 14:35] - Task name`).
+5. **On completion**: update TASKS.md **before committing** — move item to **Done** with a timestamp.
+   Never commit without first marking the task done.
 
 **Blocked entry format** (required fields):
 
@@ -66,6 +92,7 @@ Break it into independent subtasks. For each subtask identify:
 ### 3. Present the dispatch plan — wait for approval
 
 Before firing any agent, output a plan table and **stop**. Do not proceed until user approves.
+Use the harness table renderer — not hand-drawn ASCII art.
 
 ```
 Tasks selected: <list>
