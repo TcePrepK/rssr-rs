@@ -11,7 +11,7 @@
 - Add a new persisted type or data file
 - Change the testing workflow
 - Establish a new non-negotiable rule
-- **Change the task workflow or caveman mode behavior**
+- **Change the task workflow**
 
 Update `ARCHITECTURE.md` whenever you change the state machine, keybindings, App struct shape, or any design detail a
 human would want to reference.
@@ -51,13 +51,13 @@ Use vault for architectural context; don't load the full tree — navigate to wh
 
 1. **On session start**: read vault (above), then read `TASKS.md`. Pick up
    the highest-priority incomplete item.
-2. **Priority indicators**: tasks marked with [!] are high-priority. Always prioritize these before non-flagged tasks
-   within the same category.
-3. **Pick up work**: always take the highest-priority incomplete item first.
-4. **If anything is unclear**: stop and ask the user. Do not assume scope, layout, or behavior. Just ask directly in
+2. **Priority indicators**: tasks marked with [!] are high-priority. Always pick these before non-flagged tasks
+   within the same category; otherwise take the topmost incomplete item.
+3. **If anything is unclear**: stop and ask the user. Do not assume scope, layout, or behavior. Just ask directly in
    your response.
-5. **On completion**: update TASKS.md **before committing** — move item to **Done** with a timestamp.
-   Never commit without first marking the task done.
+4. **On completion**: remove the item from TASKS.md and append it to `done-tasks/YYYY-MM-DD.md` (today's date).
+   Create the file if it doesn't exist; use the heading `# YYYY-MM-DD`. Never commit without doing this first.
+   Never read the `done-tasks/` files — they are an append-only archive.
 
 **Blocked entry format** (required fields):
 
@@ -77,45 +77,52 @@ After reading TASKS.md and selecting a task, **never implement it directly**. In
 ### 1. Decompose the task
 
 Break it into independent subtasks. For each subtask identify:
+
 - What it does
 - Which files it touches
 - Whether it depends on another subtask
 
 ### 2. Assign model by complexity
 
-| Complexity | Model | Use for |
-|------------|-------|---------|
-| Trivial | `ollama (local)` | Single-function body edits, constant/string/number changes, rename within one file, add one match arm |
-| Simple | `haiku` | Read-only research, single-file multi-function changes, UI tweaks |
-| Medium | `sonnet` | Multi-file logic changes, new handlers, state machine additions |
-| Complex | `opus` | Architectural decisions, large refactors, new persisted types + full feature |
+| Complexity | Model            | Use for                                                                                               |
+|------------|------------------|-------------------------------------------------------------------------------------------------------|
+| Trivial    | `ollama (local)` | Single-function body edits, constant/string/number changes, rename within one file, add one match arm |
+| Simple     | `haiku`          | Read-only research, single-file multi-function changes, UI tweaks                                     |
+| Medium     | `sonnet`         | Multi-file logic changes, new handlers, state machine additions                                       |
+| Complex    | `opus`           | Architectural decisions, large refactors, new persisted types + full feature                          |
 
 #### Trivial routing criteria
 
-**Use `ollama`** when ALL of the following are true:
+**Use `ollama`** when ALL the following are true:
+
 - The change is within a single file
 - No new `fn`, `struct`, `enum`, or `impl` block is created
 - The instruction does not require understanding how multiple modules fit together
 - The file is not `storage.rs` or `fetch.rs`
 - The change does not touch `AppState`, `AppEvent`, or the state machine
 
-**Use `haiku` minimum** when any of the above is false, or when the instruction contains phrases like "based on", "similar to", or "following the pattern of".
+**Use `haiku` minimum** when any of the above is false, or when the instruction contains phrases like "based on", "
+similar to", or "following the pattern of".
 
-**Routing heuristic:** Can you fully specify the output without the model needing to reason about project architecture? If yes → ollama. If not → haiku minimum.
+**Routing heuristic:** Can you fully specify the output without the model needing to reason about project architecture?
+If yes → ollama. If not → haiku minimum.
 
 **Dispatch syntax for trivial tasks:**
+
 ```bash
 echo '{"file":"src/path/to/file.rs","instruction":"your instruction here","context_files":[]}' | python scripts/ollama_agent.py
 ```
 
-Default model is `qwen2.5-coder:7b`. Override with `--model <name>` if needed. Result is JSON `{"path": "...", "content": "..."}`. Apply with `Edit` or `Write` tool.
+Default model is `qwen2.5-coder:7b`. Override with `--model <name>` if needed. Result is JSON
+`{"path": "...", "content": "..."}`. Apply with `Edit` or `Write` tool.
 
-**Fallback:** If `ollama_agent.py` returns `{"error": "..."}`, escalate the task to `haiku`. Never silently drop the error.
+**Fallback:** If `ollama_agent.py` returns `{"error": "..."}`, escalate the task to `haiku`. Never silently drop the
+error.
 
 ### 3. Present the dispatch plan — wait for approval
 
 Before firing any agent, output a plan table and **stop**. Do not proceed until user approves.
-Use the harness table renderer — not hand-drawn ASCII art.
+Output a markdown table exactly matching this format:
 
 ```
 Tasks selected: <list>
@@ -136,6 +143,7 @@ User may reply "y", adjust individual models, drop agents, or merge subtasks. In
 Use the `Agent` tool. Independent subtasks launch simultaneously. Sequential subtasks (B depends on A's output) chain.
 
 Each agent prompt must include:
+
 - Exact file paths to read/edit
 - The specific change required
 - Constraints (e.g., "do not touch `ui/`", "read-only, return findings only")
@@ -145,7 +153,8 @@ Agents do **not** inherit this session's context. Give them everything they need
 
 ### 5. Review and integrate
 
-Collect agent results. Verify no conflicts. Run the test workflow yourself (agents do not run `cargo check/test/clippy`).
+Collect agent results. Verify no conflicts. Run the test workflow yourself (agents do not run
+`cargo check/test/clippy`).
 Commit per the commit discipline rules.
 
 ---
