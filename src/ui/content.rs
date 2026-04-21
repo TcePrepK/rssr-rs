@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
     Frame,
 };
 
@@ -303,6 +303,18 @@ pub(super) fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect, is_favorite
     list_state.select(Some(cursor));
     f.render_stateful_widget(List::new(items), list_area, list_state);
 
+    let total = tree.len();
+    if total > list_area.height as usize {
+        let mut scrollbar_state = ScrollbarState::new(total)
+            .position(cursor);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::default().fg(SURFACE0)),
+            list_area,
+            &mut scrollbar_state,
+        );
+    }
+
     if let Some(pb) = maybe_progress {
         super::chrome::draw_progress_bar(f, app, pb);
     }
@@ -501,6 +513,18 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
 
     app.article_list_state.select(Some(app.selected_article));
     f.render_stateful_widget(List::new(items), list_area, &mut app.article_list_state);
+
+    let total = articles.len();
+    if total > list_area.height as usize {
+        let mut scrollbar_state = ScrollbarState::new(total)
+            .position(app.selected_article);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::default().fg(SURFACE0)),
+            list_area,
+            &mut scrollbar_state,
+        );
+    }
 }
 
 pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect) {
@@ -596,12 +620,23 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Min(0), Constraint::Length(pct_width)])
         .split(bar_inner);
 
+    let mut link_spans = vec![
+        Span::raw(" "),
+        Span::styled(article.link.clone(), Style::default().fg(SUBTEXT0)),
+    ];
+    if let Some(secs) = article.published_secs {
+        let age = format_age(secs);
+        let color = age_color(secs);
+        link_spans.push(Span::styled("  •  ", Style::default().fg(SUBTEXT0)));
+        if let Some(number_part) = age.strip_suffix(" ago") {
+            link_spans.push(Span::styled(number_part.to_string(), Style::default().fg(color)));
+            link_spans.push(Span::styled(" ago", Style::default().fg(SUBTEXT0)));
+        } else {
+            link_spans.push(Span::styled(age, Style::default().fg(color)));
+        }
+    }
     f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::raw(" "),
-            Span::styled(article.link.clone(), Style::default().fg(SUBTEXT0)),
-        ]))
-        .bg(BASE),
+        Paragraph::new(Line::from(link_spans)).bg(BASE),
         bar_chunks[0],
     );
     f.render_widget(
@@ -612,4 +647,15 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect) {
     );
 
     f.render_widget(paragraph, content_area);
+
+    if app.content_line_count > content_area.height as usize {
+        let mut scrollbar_state = ScrollbarState::new(app.content_line_count)
+            .position(app.scroll_offset as usize);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::default().fg(SURFACE0)),
+            content_area,
+            &mut scrollbar_state,
+        );
+    }
 }
