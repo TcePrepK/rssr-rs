@@ -46,6 +46,9 @@ pub struct Article {
     /// Name of the feed this article was fetched from (set at fetch time).
     #[serde(default)]
     pub source_feed: String,
+    /// Unix timestamp (seconds) of when the article was published.
+    #[serde(default)]
+    pub published_secs: Option<i64>,
 }
 
 fn default_true() -> bool {

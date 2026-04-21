@@ -73,6 +73,9 @@ pub async fn fetch_feed(url: &str) -> Result<(Vec<Article>, Option<i64>), String
                 .captures(&html_content)
                 .map(|caps| caps[1].to_string());
             let content = html2md::parse_html(&html_content);
+            let published_secs = entry.published
+                .or(entry.updated)
+                .map(|dt| dt.timestamp());
 
             Article {
                 title,
@@ -83,6 +86,7 @@ pub async fn fetch_feed(url: &str) -> Result<(Vec<Article>, Option<i64>), String
                 content,
                 image_url,
                 source_feed: String::new(), // filled in by on_feed_fetched in main.rs
+                published_secs,
             }
         })
         .collect();
