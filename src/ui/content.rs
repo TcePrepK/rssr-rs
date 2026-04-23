@@ -405,65 +405,7 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
     let list_area = layout[0];
     let bar_area = layout[1];
 
-    // Info bar: separator + 2 rows (URL, stats).
-    let bar_block = Block::default()
-        .borders(Borders::TOP)
-        .border_style(Style::default().fg(SURFACE0))
-        .bg(BASE);
-    let bar_inner = bar_block.inner(bar_area);
-    f.render_widget(bar_block, bar_area);
-
-    let bar_rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Length(1)])
-        .split(bar_inner);
-
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::raw(" "),
-            Span::styled(feed_url, Style::default().fg(SUBTEXT0)),
-        ]))
-        .bg(BASE),
-        bar_rows[0],
-    );
-
-    let article_count = articles.len();
-    let unread_count = articles.iter().filter(|a| !a.is_read).count();
-    let unread_color = if unread_count > 0 { YELLOW } else { GREEN };
-    let mut stat_spans = vec![
-        Span::styled(" ", Style::default().fg(SUBTEXT0)),
-        Span::styled(article_count.to_string(), Style::default().fg(BLUE)),
-        Span::styled(" articles  •  ", Style::default().fg(SUBTEXT0)),
-        Span::styled(unread_count.to_string(), Style::default().fg(unread_color)),
-        Span::styled(" unread", Style::default().fg(SUBTEXT0)),
-    ];
-    if let Some(secs) = last_fetched_secs {
-        let age = format_age(secs);
-        let color = age_color(secs);
-        stat_spans.push(Span::styled("  •  fetched ", Style::default().fg(SUBTEXT0)));
-        if let Some(number_part) = age.strip_suffix(" ago") {
-            stat_spans.push(Span::styled(number_part.to_string(), Style::default().fg(color)));
-            stat_spans.push(Span::styled(" ago", Style::default().fg(SUBTEXT0)));
-        } else {
-            stat_spans.push(Span::styled(age, Style::default().fg(color)));
-        }
-    }
-    if let Some(secs) = feed_updated_secs {
-        let age = format_age(secs);
-        let color = age_color(secs);
-        stat_spans.push(Span::styled("  •  updated ", Style::default().fg(SUBTEXT0)));
-        if let Some(number_part) = age.strip_suffix(" ago") {
-            stat_spans.push(Span::styled(
-                number_part.to_string(),
-                Style::default().fg(color),
-            ));
-            stat_spans.push(Span::styled(" ago", Style::default().fg(SUBTEXT0)));
-        } else {
-            // "just now" — color the whole phrase
-            stat_spans.push(Span::styled(age, Style::default().fg(color)));
-        }
-    }
-    f.render_widget(Paragraph::new(Line::from(stat_spans)).bg(BASE), bar_rows[1]);
+    draw_article_list_footer(f, app, bar_area, &feed_url, articles, feed_updated_secs, last_fetched_secs);
 
     if articles.is_empty() {
         if !app.in_saved_context
@@ -546,6 +488,70 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
             &mut scrollbar_state,
         );
     }
+}
+
+/// Render the article list footer bar (feed URL, counts, fetch age).
+/// `area` should be the full-width rect already allocated for the footer.
+fn draw_article_list_footer(f: &mut Frame, _app: &App, area: Rect, feed_url: &str, articles: &[crate::models::Article], feed_updated_secs: Option<i64>, last_fetched_secs: Option<i64>) {
+    // Info bar: separator + 2 rows (URL, stats).
+    let bar_block = Block::default()
+        .borders(Borders::TOP)
+        .border_style(Style::default().fg(SURFACE0))
+        .bg(BASE);
+    let bar_inner = bar_block.inner(area);
+    f.render_widget(bar_block, area);
+
+    let bar_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(bar_inner);
+
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(feed_url, Style::default().fg(SUBTEXT0)),
+        ]))
+        .bg(BASE),
+        bar_rows[0],
+    );
+
+    let article_count = articles.len();
+    let unread_count = articles.iter().filter(|a| !a.is_read).count();
+    let unread_color = if unread_count > 0 { YELLOW } else { GREEN };
+    let mut stat_spans = vec![
+        Span::styled(" ", Style::default().fg(SUBTEXT0)),
+        Span::styled(article_count.to_string(), Style::default().fg(BLUE)),
+        Span::styled(" articles  •  ", Style::default().fg(SUBTEXT0)),
+        Span::styled(unread_count.to_string(), Style::default().fg(unread_color)),
+        Span::styled(" unread", Style::default().fg(SUBTEXT0)),
+    ];
+    if let Some(secs) = last_fetched_secs {
+        let age = format_age(secs);
+        let color = age_color(secs);
+        stat_spans.push(Span::styled("  •  fetched ", Style::default().fg(SUBTEXT0)));
+        if let Some(number_part) = age.strip_suffix(" ago") {
+            stat_spans.push(Span::styled(number_part.to_string(), Style::default().fg(color)));
+            stat_spans.push(Span::styled(" ago", Style::default().fg(SUBTEXT0)));
+        } else {
+            stat_spans.push(Span::styled(age, Style::default().fg(color)));
+        }
+    }
+    if let Some(secs) = feed_updated_secs {
+        let age = format_age(secs);
+        let color = age_color(secs);
+        stat_spans.push(Span::styled("  •  updated ", Style::default().fg(SUBTEXT0)));
+        if let Some(number_part) = age.strip_suffix(" ago") {
+            stat_spans.push(Span::styled(
+                number_part.to_string(),
+                Style::default().fg(color),
+            ));
+            stat_spans.push(Span::styled(" ago", Style::default().fg(SUBTEXT0)));
+        } else {
+            // "just now" — color the whole phrase
+            stat_spans.push(Span::styled(age, Style::default().fg(color)));
+        }
+    }
+    f.render_widget(Paragraph::new(Line::from(stat_spans)).bg(BASE), bar_rows[1]);
 }
 
 pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect) {
