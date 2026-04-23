@@ -4,7 +4,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::{
     app::App,
     fetch::{fetch_feed, fetch_readable_content},
-    models::{AppEvent, AppState, Article, FeedSource, CONTENT_STUB_MAX_LEN},
+    models::{AppEvent, AppState, Article, FeedSource, SavedArticle, SavedCategory, CONTENT_STUB_MAX_LEN},
     storage::save_user_data,
 };
 
@@ -15,7 +15,7 @@ pub(super) async fn handle_article(
 ) -> bool {
     match key.code {
         KeyCode::Char('q') => return true,
-        KeyCode::Char('r') if !app.in_favorites_context => {
+        KeyCode::Char('r') if !app.in_saved_context => {
             let idx = app.selected_feed;
             if let Some(feed) = app.feeds.get_mut(idx) {
                 let url = feed.url.clone();
@@ -53,7 +53,7 @@ pub(super) async fn handle_article(
             open_article(app, tx);
         }
         KeyCode::Char('m') => toggle_read(app),
-        KeyCode::Char('s') => toggle_starred(app),
+        KeyCode::Char('s') => open_category_picker(app),
         KeyCode::Char('o') => {
             if let Some(article) = get_selected_article(app) {
                 let _ = open::that(&article.link);
@@ -65,21 +65,192 @@ pub(super) async fn handle_article(
     false
 }
 
+pub(super) fn handle_category_picker(app: &mut App, key: KeyEvent) {
+    let cats_len = app.user_data.saved_categories.len();
+    // Layout: [0..cats_len) = existing categories, cats_len = "New category...", cats_len+1 = "Unsave"
+    let total_items = cats_len + 2;
+
+    if app.category_picker_new_mode {
+        match key.code {
+            KeyCode::Enter => {
+                let name = app.category_picker_input.trim().to_string();
+                if !name.is_empty() {
+                    let new_id = app
+                        .user_data
+                        .saved_categories
+                        .iter()
+                        .map(|c| c.id)
+                        .max()
+                        .unwrap_or(0)
+                        + 1;
+                    app.user_data.saved_categories.push(SavedCategory {
+                        id: new_id,
+                        name: name.clone(),
+                    });
+                    save_to_category(app, new_id);
+                    app.set_status(format!("Saved to '{name}'!"));
+                }
+                app.category_picker_new_mode = false;
+                app.category_picker_input.clear();
+                app.state = app.category_picker_return_state.clone();
+            }
+            KeyCode::Char(c) => app.category_picker_input.push(c),
+            KeyCode::Backspace => {
+                app.category_picker_input.pop();
+            }
+            KeyCode::Esc => {
+                app.category_picker_new_mode = false;
+                app.category_picker_input.clear();
+            }
+            _ => {}
+        }
+        return;
+    }
+
+    match key.code {
+        KeyCode::Up => {
+            app.category_picker_cursor = app
+                .category_picker_cursor
+                .checked_sub(1)
+                .unwrap_or(total_items - 1);
+        }
+        KeyCode::Down => {
+            app.category_picker_cursor = (app.category_picker_cursor + 1) % total_items;
+        }
+        KeyCode::Enter => {
+            if app.category_picker_cursor < cats_len {
+                // Save to existing category
+                let cat_id = app.user_data.saved_categories[app.category_picker_cursor].id;
+                let cat_name = app.user_data.saved_categories[app.category_picker_cursor]
+                    .name
+                    .clone();
+                save_to_category(app, cat_id);
+                app.set_status(format!("Saved to '{cat_name}'!"));
+                app.state = app.category_picker_return_state.clone();
+            } else if app.category_picker_cursor == cats_len {
+                // "New category..." — enter text input mode
+                app.category_picker_new_mode = true;
+                app.category_picker_input.clear();
+            } else {
+                // "Unsave"
+                unsave_article(app);
+                app.state = app.category_picker_return_state.clone();
+            }
+        }
+        KeyCode::Esc => {
+            app.state = app.category_picker_return_state.clone();
+        }
+        _ => {}
+    }
+}
+
+fn open_category_picker(app: &mut App) {
+    let article = match get_selected_article(app) {
+        Some(a) => a,
+        None => return,
+    };
+
+    // Pre-select current category if article is already saved.
+    let current_cat_idx = app
+        .user_data
+        .saved_articles
+        .iter()
+        .find(|s| s.article.link == article.link)
+        .and_then(|s| {
+            app.user_data
+                .saved_categories
+                .iter()
+                .position(|c| c.id == s.category_id)
+        });
+
+    app.category_picker_cursor = current_cat_idx.unwrap_or(0);
+    app.category_picker_new_mode = false;
+    app.category_picker_input.clear();
+    app.category_picker_return_state = app.state.clone();
+    app.state = AppState::CategoryPicker;
+}
+
+fn save_to_category(app: &mut App, category_id: u32) {
+    let article = match get_selected_article(app) {
+        Some(a) => a,
+        None => return,
+    };
+
+    if let Some(s) = app
+        .user_data
+        .saved_articles
+        .iter_mut()
+        .find(|s| s.article.link == article.link)
+    {
+        s.category_id = category_id;
+    } else {
+        app.user_data.saved_articles.push(SavedArticle {
+            article: article.clone(),
+            category_id,
+        });
+    }
+
+    update_is_saved_flag(app, true);
+    let _ = save_user_data(&app.user_data);
+}
+
+fn unsave_article(app: &mut App) {
+    let article = match get_selected_article(app) {
+        Some(a) => a,
+        None => return,
+    };
+
+    app.user_data
+        .saved_articles
+        .retain(|s| s.article.link != article.link);
+    update_is_saved_flag(app, false);
+
+    if app.in_saved_context {
+        app.saved_view_articles
+            .retain(|a| a.link != article.link);
+        if app.selected_article >= app.saved_view_articles.len()
+            && !app.saved_view_articles.is_empty()
+        {
+            app.selected_article = app.saved_view_articles.len() - 1;
+        }
+    }
+
+    app.set_status("Article unsaved.");
+    let _ = save_user_data(&app.user_data);
+}
+
+fn update_is_saved_flag(app: &mut App, is_saved: bool) {
+    if app.in_saved_context {
+        if let Some(art) = app.saved_view_articles.get_mut(app.selected_article) {
+            art.is_saved = is_saved;
+            let link = art.link.clone();
+            let source_feed = art.source_feed.clone();
+            if let Some(feed) = app.feeds.iter_mut().find(|f| f.title == source_feed)
+                && let Some(src) = feed.articles.iter_mut().find(|a| a.link == link)
+            {
+                src.is_saved = is_saved;
+            }
+        }
+    } else if let Some(art) = app
+        .feeds
+        .get_mut(app.selected_feed)
+        .and_then(|f| f.articles.get_mut(app.selected_article))
+    {
+        art.is_saved = is_saved;
+    }
+}
+
 fn open_article(app: &mut App, tx: &UnboundedSender<AppEvent>) {
     let article = get_selected_article(app);
     let Some(article) = article else { return };
-
     mark_article_as_read(app, &article);
     fetch_full_article_if_stub(app, tx, &article);
-
     app.select();
 }
 
-fn get_selected_article(app: &App) -> Option<Article> {
-    if app.in_favorites_context {
-        app.favorite_view_articles
-            .get(app.selected_article)
-            .cloned()
+pub(super) fn get_selected_article(app: &App) -> Option<Article> {
+    if app.in_saved_context {
+        app.saved_view_articles.get(app.selected_article).cloned()
     } else {
         app.feeds
             .get(app.selected_feed)
@@ -92,34 +263,33 @@ fn mark_article_as_read(app: &mut App, article: &Article) {
     if article.is_read {
         return;
     }
-
     app.user_data.read_links.insert(article.link.clone());
     let _ = save_user_data(&app.user_data);
 
-    if app.in_favorites_context {
-        mark_favorite_as_read(app, article);
+    if app.in_saved_context {
+        mark_saved_as_read(app, article);
     } else {
         mark_regular_article_as_read(app);
     }
 }
 
-fn mark_favorite_as_read(app: &mut App, article: &Article) {
-    if let Some(a) = app.favorite_view_articles.get_mut(app.selected_article) {
+fn mark_saved_as_read(app: &mut App, article: &Article) {
+    if let Some(a) = app.saved_view_articles.get_mut(app.selected_article) {
         a.is_read = true;
     }
-    if let Some(feed) = app
-        .feeds
-        .iter_mut()
-        .find(|f| f.title == article.source_feed)
-    {
+    if let Some(feed) = app.feeds.iter_mut().find(|f| f.title == article.source_feed) {
         if let Some(a) = feed.articles.iter_mut().find(|a| a.link == article.link) {
             a.is_read = true;
         }
         feed.unread_count = feed.articles.iter().filter(|a| !a.is_read).count();
     }
-    // Keep starred_articles snapshot in sync.
-    if let Some(s) = app.user_data.starred_articles.iter_mut().find(|s| s.link == article.link) {
-        s.is_read = true;
+    if let Some(s) = app
+        .user_data
+        .saved_articles
+        .iter_mut()
+        .find(|s| s.article.link == article.link)
+    {
+        s.article.is_read = true;
     }
 }
 
@@ -127,15 +297,18 @@ fn mark_regular_article_as_read(app: &mut App) {
     if let Some(feed) = app.feeds.get_mut(app.selected_feed) {
         if let Some(a) = feed.articles.get_mut(app.selected_article) {
             a.is_read = true;
-            // Keep starred_articles snapshot in sync so Favorites reflects the read state.
-            if let Some(s) = app.user_data.starred_articles.iter_mut().find(|s| s.link == a.link) {
-                s.is_read = true;
+            if let Some(s) = app
+                .user_data
+                .saved_articles
+                .iter_mut()
+                .find(|s| s.article.link == a.link)
+            {
+                s.article.is_read = true;
             }
         }
         feed.unread_count = feed.articles.iter().filter(|a| !a.is_read).count();
     }
 }
-
 
 fn fetch_full_article_if_stub(app: &mut App, tx: &UnboundedSender<AppEvent>, article: &Article) {
     if article.content.len() >= CONTENT_STUB_MAX_LEN {
@@ -147,8 +320,8 @@ fn fetch_full_article_if_stub(app: &mut App, tx: &UnboundedSender<AppEvent>, art
 
     let tx2 = tx.clone();
     let url = article.link.clone();
-    let source = if app.in_favorites_context {
-        FeedSource::Favorites
+    let source = if app.in_saved_context {
+        FeedSource::Saved
     } else {
         FeedSource::Feed(app.selected_feed)
     };
@@ -160,8 +333,8 @@ fn fetch_full_article_if_stub(app: &mut App, tx: &UnboundedSender<AppEvent>, art
 }
 
 fn update_article_content(app: &mut App, content: String) {
-    if app.in_favorites_context {
-        if let Some(a) = app.favorite_view_articles.get_mut(app.selected_article) {
+    if app.in_saved_context {
+        if let Some(a) = app.saved_view_articles.get_mut(app.selected_article) {
             a.content = content;
         }
     } else if let Some(feed) = app.feeds.get_mut(app.selected_feed)
@@ -172,8 +345,8 @@ fn update_article_content(app: &mut App, content: String) {
 }
 
 fn toggle_read(app: &mut App) {
-    let update = if app.in_favorites_context {
-        toggle_read_favorite(app)
+    let update = if app.in_saved_context {
+        toggle_read_saved(app)
     } else {
         toggle_read_regular(app)
     };
@@ -188,14 +361,13 @@ fn toggle_read(app: &mut App) {
     }
 }
 
-fn toggle_read_favorite(app: &mut App) -> Option<(String, bool)> {
-    let art = app.favorite_view_articles.get_mut(app.selected_article)?;
+fn toggle_read_saved(app: &mut App) -> Option<(String, bool)> {
+    let art = app.saved_view_articles.get_mut(app.selected_article)?;
     art.is_read = !art.is_read;
     let link = art.link.clone();
     let is_read = art.is_read;
     let source_feed = art.source_feed.clone();
 
-    // Sync the source feed's copy of the article.
     if let Some(feed) = app.feeds.iter_mut().find(|f| f.title == source_feed) {
         if let Some(a) = feed.articles.iter_mut().find(|a| a.link == link) {
             a.is_read = is_read;
@@ -203,9 +375,13 @@ fn toggle_read_favorite(app: &mut App) -> Option<(String, bool)> {
         feed.unread_count = feed.articles.iter().filter(|a| !a.is_read).count();
     }
 
-    // Sync the persistent starred_articles snapshot so re-entering Favorites reflects the change.
-    if let Some(a) = app.user_data.starred_articles.iter_mut().find(|a| a.link == link) {
-        a.is_read = is_read;
+    if let Some(s) = app
+        .user_data
+        .saved_articles
+        .iter_mut()
+        .find(|s| s.article.link == link)
+    {
+        s.article.is_read = is_read;
     }
 
     Some((link, is_read))
@@ -226,104 +402,14 @@ fn toggle_read_regular(app: &mut App) -> Option<(String, bool)> {
         .filter(|a| !a.is_read)
         .count();
 
-    // Keep starred_articles snapshot in sync so Favorites reflects the toggle.
-    if let Some(s) = app.user_data.starred_articles.iter_mut().find(|s| s.link == link) {
-        s.is_read = is_now_read;
+    if let Some(s) = app
+        .user_data
+        .saved_articles
+        .iter_mut()
+        .find(|s| s.article.link == link)
+    {
+        s.article.is_read = is_now_read;
     }
 
     Some((link, is_now_read))
-}
-
-fn toggle_starred(app: &mut App) {
-    let article_info = get_selected_article_info(app);
-    let Some((link, source_feed)) = article_info else {
-        return;
-    };
-
-    let new_starred = get_current_starred_state(app);
-    update_starred_in_articles(app, new_starred);
-    update_starred_in_user_data(app, &link, &source_feed, new_starred);
-
-    let _ = save_user_data(&app.user_data);
-    app.set_status(if new_starred {
-        "Article starred! ⭐"
-    } else {
-        "Article un-starred."
-    });
-}
-
-fn get_selected_article_info(app: &App) -> Option<(String, String)> {
-    if app.in_favorites_context {
-        let art = app.favorite_view_articles.get(app.selected_article)?;
-        Some((art.link.clone(), art.source_feed.clone()))
-    } else {
-        if app.feeds.is_empty() || app.feeds[app.selected_feed].articles.is_empty() {
-            return None;
-        }
-        let art = &app.feeds[app.selected_feed].articles[app.selected_article];
-        Some((art.link.clone(), art.source_feed.clone()))
-    }
-}
-
-fn get_current_starred_state(app: &App) -> bool {
-    if app.in_favorites_context {
-        app.favorite_view_articles
-            .get(app.selected_article)
-            .map(|a| !a.is_starred)
-            .unwrap_or(false)
-    } else {
-        app.feeds
-            .get(app.selected_feed)
-            .and_then(|f| f.articles.get(app.selected_article))
-            .map(|a| !a.is_starred)
-            .unwrap_or(false)
-    }
-}
-
-fn update_starred_in_articles(app: &mut App, new_starred: bool) {
-    if app.in_favorites_context {
-        if let Some(art) = app.favorite_view_articles.get_mut(app.selected_article) {
-            art.is_starred = new_starred;
-            let link = art.link.clone();
-            let source_feed = art.source_feed.clone();
-            if let Some(feed) = app.feeds.iter_mut().find(|f| f.title == source_feed)
-                && let Some(source_art) = feed.articles.iter_mut().find(|a| a.link == link)
-            {
-                source_art.is_starred = new_starred;
-            }
-        }
-    } else {
-        if let Some(art) = app
-            .feeds
-            .get_mut(app.selected_feed)
-            .and_then(|f| f.articles.get_mut(app.selected_article))
-        {
-            art.is_starred = new_starred;
-        }
-    }
-}
-
-fn update_starred_in_user_data(app: &mut App, link: &str, _source_feed: &str, new_starred: bool) {
-    if new_starred {
-        let art_clone = get_selected_article(app);
-        if let Some(art) = art_clone
-            && !app
-                .user_data
-                .starred_articles
-                .iter()
-                .any(|a| a.link == link)
-        {
-            app.user_data.starred_articles.push(art);
-        }
-    } else {
-        app.user_data.starred_articles.retain(|a| a.link != link);
-        if app.in_favorites_context {
-            app.favorite_view_articles.retain(|a| a.link != link);
-            if app.selected_article >= app.favorite_view_articles.len()
-                && !app.favorite_view_articles.is_empty()
-            {
-                app.selected_article = app.favorite_view_articles.len() - 1;
-            }
-        }
-    }
 }
