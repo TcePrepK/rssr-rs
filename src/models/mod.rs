@@ -49,26 +49,3 @@ pub enum FeedTreeItem {
     },
 }
 
-/// Interaction mode inside the FeedEditor screen.
-#[derive(Debug, Clone, PartialEq)]
-pub enum FeedEditorMode {
-    Normal,
-    /// Item at this render-list index is being dragged.
-    Moving {
-        /// Index in the effective tree (all-collapsed for category moves).
-        origin_render_idx: usize,
-        /// Cursor position before entering move mode — restored on Esc.
-        original_cursor: usize,
-        /// Depth offset relative to cursor's depth (categories only).
-        /// 0 = sibling after cursor, +1 = child of cursor, -1 = sibling of cursor's parent.
-        depth_delta: i8,
-    },
-    /// Renaming the item at this render-list index.
-    Renaming {
-        render_idx: usize,
-    },
-    /// Typing a name for a new category. None = root level, Some = subcategory.
-    NewCategory {
-        parent_id: Option<CategoryId>,
-    },
-}
