@@ -95,7 +95,7 @@ pub(super) fn draw_feeds_tab(f: &mut Frame, app: &mut App, area: Rect) {
         AppState::FeedList | AppState::ArticleList | AppState::AddFeed => {
             draw_article_list(f, app, cols[1]);
         }
-        AppState::ArticleDetail => draw_article_detail(f, app, cols[1]),
+        AppState::ArticleDetail => draw_article_detail(f, app, cols[1], false),
         _ => {}
     }
 }
@@ -110,7 +110,7 @@ pub(super) fn draw_saved_tab(f: &mut Frame, app: &mut App, area: Rect) {
 
     match app.state {
         AppState::SavedCategoryList | AppState::ArticleList => draw_article_list(f, app, cols[1]),
-        AppState::ArticleDetail => draw_article_detail(f, app, cols[1]),
+        AppState::ArticleDetail => draw_article_detail(f, app, cols[1], false),
         _ => draw_article_list(f, app, cols[1]),
     }
 }
@@ -554,7 +554,7 @@ fn draw_article_list_footer(f: &mut Frame, _app: &App, area: Rect, feed_url: &st
     f.render_widget(Paragraph::new(Line::from(stat_spans)).bg(BASE), bar_rows[1]);
 }
 
-pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect) {
+pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect, is_preview: bool) {
     let article = if app.in_saved_context {
         app.saved_view_articles
             .get(app.selected_article)
@@ -565,6 +565,21 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect) {
             .and_then(|f| f.articles.get(app.selected_article))
             .cloned()
     };
+    if article.is_none() && is_preview {
+        let block = Block::default()
+            .border_set(border_set(app.user_data.border_rounded))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(SURFACE0))
+            .bg(BASE);
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        f.render_widget(
+            Paragraph::new("Select an article to preview.")
+                .style(Style::default().fg(SUBTEXT0)),
+            inner,
+        );
+        return;
+    }
     let Some(article) = article else { return };
 
     // Show spinner only when the article's own feed is actively refreshing.
@@ -614,23 +629,22 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect) {
         .replace_all(&no_images, "$1")
         .to_string();
 
-    app.content_area_height = content_area.height;
+    let scroll_offset = if is_preview { 0 } else { app.scroll_offset };
+
+    if !is_preview {
+        app.content_area_height = content_area.height;
+    }
 
     // Build the paragraph first so we can call line_count(width) for the true rendered
     // line count (accounts for word-wrap), not just the logical markdown line count.
     let paragraph = Paragraph::new(tui_markdown::from_str(&stripped))
         .wrap(Wrap { trim: false })
-        .scroll((app.scroll_offset, 0));
-    app.content_line_count = paragraph.line_count(content_area.width).max(1);
+        .scroll((scroll_offset, 0));
 
-    let max_scroll = app
-        .content_line_count
-        .saturating_sub(app.content_area_height as usize);
-    let pct = if max_scroll == 0 {
-        100
-    } else {
-        (app.scroll_offset as usize * 100 / max_scroll).min(100)
-    };
+    let line_count = paragraph.line_count(content_area.width).max(1);
+    if !is_preview {
+        app.content_line_count = line_count;
+    }
 
     // Bottom bar: separator + link / scroll %
     let bar_block = Block::default()
@@ -639,13 +653,6 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect) {
         .bg(BASE);
     let bar_inner = bar_block.inner(bar_area);
     f.render_widget(bar_block, bar_area);
-
-    let pct_str = format!(" {pct}% ");
-    let pct_width = pct_str.len() as u16;
-    let bar_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(0), Constraint::Length(pct_width)])
-        .split(bar_inner);
 
     let mut link_spans = vec![
         Span::raw(" "),
@@ -662,22 +669,42 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect) {
             link_spans.push(Span::styled(age, Style::default().fg(color)));
         }
     }
-    f.render_widget(
-        Paragraph::new(Line::from(link_spans)).bg(BASE),
-        bar_chunks[0],
-    );
-    f.render_widget(
-        Paragraph::new(pct_str)
-            .style(Style::default().fg(YELLOW).add_modifier(Modifier::BOLD))
-            .bg(BASE),
-        bar_chunks[1],
-    );
+
+    if is_preview {
+        f.render_widget(
+            Paragraph::new(Line::from(link_spans)).bg(BASE),
+            bar_inner,
+        );
+    } else {
+        let max_scroll = line_count.saturating_sub(content_area.height as usize);
+        let pct = if max_scroll == 0 {
+            100
+        } else {
+            (scroll_offset as usize * 100 / max_scroll).min(100)
+        };
+        let pct_str = format!(" {pct}% ");
+        let pct_width = pct_str.len() as u16;
+        let bar_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(0), Constraint::Length(pct_width)])
+            .split(bar_inner);
+        f.render_widget(
+            Paragraph::new(Line::from(link_spans)).bg(BASE),
+            bar_chunks[0],
+        );
+        f.render_widget(
+            Paragraph::new(pct_str)
+                .style(Style::default().fg(YELLOW).add_modifier(Modifier::BOLD))
+                .bg(BASE),
+            bar_chunks[1],
+        );
+    }
 
     f.render_widget(paragraph, content_area);
 
-    if app.content_line_count > content_area.height as usize {
-        let mut scrollbar_state = ScrollbarState::new(app.content_line_count)
-            .position(app.scroll_offset as usize);
+    if !is_preview && line_count > content_area.height as usize {
+        let mut scrollbar_state = ScrollbarState::new(line_count)
+            .position(scroll_offset as usize);
         f.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .style(Style::default().fg(SURFACE0)),
