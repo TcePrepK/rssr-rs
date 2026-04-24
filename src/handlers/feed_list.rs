@@ -14,7 +14,7 @@ pub(super) fn handle_feed_list(
 ) -> bool {
     match key.code {
         KeyCode::Char('q') => return true,
-        KeyCode::Char('r') if !app.in_favorites_context => {
+        KeyCode::Char('r') if !app.in_saved_context => {
             let idx = app.selected_feed;
             if let Some(feed) = app.feeds.get_mut(idx) {
                 let url = feed.url.clone();
@@ -31,7 +31,7 @@ pub(super) fn handle_feed_list(
                 });
             }
         }
-        KeyCode::Char('R') if !app.in_favorites_context => {
+        KeyCode::Char('R') if !app.in_saved_context => {
             let count = app.feeds.iter().filter(|f| f.url != crate::models::FAVORITES_URL).count();
             if count > 0 {
                 app.feeds_total += count;
@@ -90,7 +90,7 @@ pub(super) fn handle_feed_list(
     false
 }
 
-pub(super) fn handle_favorite_feed_list(app: &mut App, key: KeyEvent) -> bool {
+pub(super) fn handle_saved_feed_list(app: &mut App, key: KeyEvent) -> bool {
     match key.code {
         KeyCode::Char('q') => return true,
         KeyCode::Tab => app.switch_tab_right(),

@@ -82,7 +82,7 @@ pub async fn fetch_feed(url: &str) -> Result<(Vec<Article>, Option<i64>), String
                 description,
                 link,
                 is_read: false,
-                is_starred: false,
+                is_saved: false,
                 content,
                 image_url,
                 source_feed: String::new(), // filled in by on_feed_fetched in main.rs

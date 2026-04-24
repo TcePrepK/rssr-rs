@@ -27,8 +27,8 @@ pub struct App {
     // ── Persistent list scroll states ────────────────────────────────────────
     /// Scroll state for the feed/category sidebar (FeedList tab).
     pub sidebar_list_state: ListState,
-    /// Scroll state for the favorites sidebar (Favorites tab).
-    pub favorites_sidebar_list_state: ListState,
+    /// Scroll state for the saved-categories sidebar (Saved tab).
+    pub saved_sidebar_list_state: ListState,
     /// Scroll state for the article list panel.
     pub article_list_state: ListState,
     /// Scroll state for the editor feeds panel.
@@ -39,13 +39,29 @@ pub struct App {
     // ── Tab bar ──────────────────────────────────────────────────────────────
     pub selected_tab: Tab,
 
-    // ── Favorites context ────────────────────────────────────────────────────
-    /// Cursor into the flattened filtered-favorite-tree list in the sidebar.
-    pub favorites_sidebar_cursor: usize,
-    /// Articles shown in ArticleList/ArticleDetail when browsing Favorites.
-    pub favorite_view_articles: Vec<Article>,
-    /// True while ArticleList / ArticleDetail is showing a favorites sub-feed.
-    pub in_favorites_context: bool,
+    // ── Saved context ────────────────────────────────────────────────────────
+    /// Cursor into the flat saved-categories sidebar list (0 = "All Saved", 1+ = category).
+    pub saved_sidebar_cursor: usize,
+    /// Articles shown in ArticleList/ArticleDetail when browsing the Saved tab.
+    pub saved_view_articles: Vec<Article>,
+    /// True while ArticleList / ArticleDetail is showing saved articles.
+    pub in_saved_context: bool,
+    /// None = "All Saved" is selected; Some(id) = a specific category is selected.
+    pub selected_saved_category: Option<u32>,
+
+    // ── Category picker ──────────────────────────────────────────────────────
+    /// Cursor row in the CategoryPicker modal (0..categories + 2).
+    pub category_picker_cursor: usize,
+    /// True when the "New category..." entry is active and user is typing.
+    pub category_picker_new_mode: bool,
+    /// Text buffer for the new-category name input inside the picker.
+    pub category_picker_input: String,
+    /// State to return to when the picker closes (ArticleList or ArticleDetail).
+    pub category_picker_return_state: AppState,
+
+    // ── Saved category editor ────────────────────────────────────────────────
+    /// Cursor in the SavedCategoryEditor list.
+    pub saved_cat_editor_cursor: usize,
 
     // ── Multi-step AddFeed ───────────────────────────────────────────────────
     pub add_feed_step: AddFeedStep,
@@ -147,14 +163,20 @@ impl App {
             content_area_height: 20,
             tick: 0,
             sidebar_list_state: ListState::default(),
-            favorites_sidebar_list_state: ListState::default(),
+            saved_sidebar_list_state: ListState::default(),
             article_list_state: ListState::default(),
             editor_feeds_list_state: ListState::default(),
             editor_cats_list_state: ListState::default(),
             selected_tab: Tab::Feeds,
-            favorites_sidebar_cursor: 0,
-            favorite_view_articles: Vec::new(),
-            in_favorites_context: false,
+            saved_sidebar_cursor: 0,
+            saved_view_articles: Vec::new(),
+            in_saved_context: false,
+            selected_saved_category: None,
+            category_picker_cursor: 0,
+            category_picker_new_mode: false,
+            category_picker_input: String::new(),
+            category_picker_return_state: AppState::ArticleList,
+            saved_cat_editor_cursor: 0,
             add_feed_step: AddFeedStep::Url,
             add_feed_url: String::new(),
             add_feed_fetched_title: None,
@@ -200,14 +222,14 @@ impl App {
     }
 
     fn apply_tab_state(&mut self) {
-        self.in_favorites_context = false;
+        self.in_saved_context = false;
         self.state = match self.selected_tab {
             Tab::Feeds => AppState::FeedList,
-            Tab::Favorites => AppState::FavoriteFeedList,
+            Tab::Saved => AppState::SavedCategoryList,
             Tab::Settings => AppState::SettingsList,
         };
-        if self.selected_tab == Tab::Favorites {
-            self.sync_favorites_preview();
+        if self.selected_tab == Tab::Saved {
+            self.sync_saved_preview();
         }
     }
 
@@ -231,8 +253,8 @@ impl App {
                 }
             }
             AppState::ArticleList => {
-                let len = if self.in_favorites_context {
-                    self.favorite_view_articles.len()
+                let len = if self.in_saved_context {
+                    self.saved_view_articles.len()
                 } else {
                     self.feeds
                         .get(self.selected_feed)
@@ -246,19 +268,11 @@ impl App {
             AppState::SettingsList => {
                 self.settings_selected = self.settings_selected.next();
             }
-            AppState::FavoriteFeedList => {
-                let items = visible_favorites_tree_items(
-                    &self.categories,
-                    &self.feeds,
-                    &self.sidebar_collapsed,
-                    &self.user_data.starred_articles,
-                );
-                if !items.is_empty() {
-                    self.favorites_sidebar_cursor =
-                        (self.favorites_sidebar_cursor + 1) % items.len();
-                    self.sidebar_title_start_tick = self.tick;
-                    self.sync_favorites_preview();
-                }
+            AppState::SavedCategoryList => {
+                let count = 1 + self.user_data.saved_categories.len();
+                self.saved_sidebar_cursor = (self.saved_sidebar_cursor + 1) % count;
+                self.sidebar_title_start_tick = self.tick;
+                self.sync_saved_preview();
             }
             AppState::FeedEditor => {
                 if self.editor_panel == EditorPanel::Categories {
@@ -322,8 +336,8 @@ impl App {
                 }
             }
             AppState::ArticleList => {
-                let len = if self.in_favorites_context {
-                    self.favorite_view_articles.len()
+                let len = if self.in_saved_context {
+                    self.saved_view_articles.len()
                 } else {
                     self.feeds
                         .get(self.selected_feed)
@@ -337,21 +351,14 @@ impl App {
             AppState::SettingsList => {
                 self.settings_selected = self.settings_selected.prev();
             }
-            AppState::FavoriteFeedList => {
-                let items = visible_favorites_tree_items(
-                    &self.categories,
-                    &self.feeds,
-                    &self.sidebar_collapsed,
-                    &self.user_data.starred_articles,
-                );
-                if !items.is_empty() {
-                    self.favorites_sidebar_cursor = self
-                        .favorites_sidebar_cursor
-                        .checked_sub(1)
-                        .unwrap_or(items.len() - 1);
-                    self.sidebar_title_start_tick = self.tick;
-                    self.sync_favorites_preview();
-                }
+            AppState::SavedCategoryList => {
+                let count = 1 + self.user_data.saved_categories.len();
+                self.saved_sidebar_cursor = self
+                    .saved_sidebar_cursor
+                    .checked_sub(1)
+                    .unwrap_or(count - 1);
+                self.sidebar_title_start_tick = self.tick;
+                self.sync_saved_preview();
             }
             AppState::FeedEditor => {
                 if self.editor_panel == EditorPanel::Categories {
@@ -417,44 +424,16 @@ impl App {
                     None => {}
                 }
             }
-            AppState::FavoriteFeedList => {
-                let items = visible_favorites_tree_items(
-                    &self.categories,
-                    &self.feeds,
-                    &self.sidebar_collapsed,
-                    &self.user_data.starred_articles,
-                );
-                match items.get(self.favorites_sidebar_cursor) {
-                    Some(FeedTreeItem::Category { id, .. }) => {
-                        if self.sidebar_collapsed.contains(id) {
-                            self.sidebar_collapsed.remove(id);
-                        } else {
-                            self.sidebar_collapsed.insert(*id);
-                        }
-                    }
-                    Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
-                        let feed_title = self
-                            .feeds
-                            .get(*feeds_idx)
-                            .map(|f| f.title.clone())
-                            .unwrap_or_default();
-                        self.favorite_view_articles = self
-                            .user_data
-                            .starred_articles
-                            .iter()
-                            .filter(|a| a.source_feed == feed_title)
-                            .cloned()
-                            .collect();
-                        self.in_favorites_context = true;
-                        self.state = AppState::ArticleList;
-                        self.selected_article = 0;
-                    }
-                    None => {}
+            AppState::SavedCategoryList => {
+                self.sync_saved_preview();
+                if !self.saved_view_articles.is_empty() {
+                    self.state = AppState::ArticleList;
+                    self.selected_article = 0;
                 }
             }
             AppState::ArticleList => {
-                let has_articles = if self.in_favorites_context {
-                    !self.favorite_view_articles.is_empty()
+                let has_articles = if self.in_saved_context {
+                    !self.saved_view_articles.is_empty()
                 } else {
                     self.feeds
                         .get(self.selected_feed)
@@ -463,8 +442,8 @@ impl App {
                 if has_articles {
                     self.state = AppState::ArticleDetail;
                     self.scroll_offset = 0;
-                    let content = if self.in_favorites_context {
-                        self.favorite_view_articles[self.selected_article]
+                    let content = if self.in_saved_context {
+                        self.saved_view_articles[self.selected_article]
                             .content
                             .clone()
                     } else {
@@ -479,34 +458,34 @@ impl App {
         }
     }
 
-    /// Populate `favorite_view_articles` from the feed under the favorites sidebar cursor.
-    /// Sets `in_favorites_context = true` when on a feed, false when on a category or nothing.
-    pub fn sync_favorites_preview(&mut self) {
-        let items = visible_favorites_tree_items(
-            &self.categories,
-            &self.feeds,
-            &self.sidebar_collapsed,
-            &self.user_data.starred_articles,
-        );
-        match items.get(self.favorites_sidebar_cursor) {
-            Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
-                let feed_title = self
-                    .feeds
-                    .get(*feeds_idx)
-                    .map(|f| f.title.clone())
-                    .unwrap_or_default();
-                self.favorite_view_articles = self
+    /// Populate `saved_view_articles` from the currently selected sidebar entry.
+    /// 0 = "All Saved", 1+ = category index.
+    pub fn sync_saved_preview(&mut self) {
+        if self.saved_sidebar_cursor == 0 {
+            self.saved_view_articles = self
+                .user_data
+                .saved_articles
+                .iter()
+                .map(|s| s.article.clone())
+                .collect();
+            self.selected_saved_category = None;
+            self.in_saved_context = !self.saved_view_articles.is_empty();
+        } else {
+            let cat_idx = self.saved_sidebar_cursor - 1;
+            if let Some(cat) = self.user_data.saved_categories.get(cat_idx) {
+                let cat_id = cat.id;
+                self.selected_saved_category = Some(cat_id);
+                self.saved_view_articles = self
                     .user_data
-                    .starred_articles
+                    .saved_articles
                     .iter()
-                    .filter(|a| a.source_feed == feed_title)
-                    .cloned()
+                    .filter(|s| s.category_id == cat_id)
+                    .map(|s| s.article.clone())
                     .collect();
-                self.in_favorites_context = true;
-            }
-            _ => {
-                self.favorite_view_articles.clear();
-                self.in_favorites_context = false;
+                self.in_saved_context = !self.saved_view_articles.is_empty();
+            } else {
+                self.saved_view_articles.clear();
+                self.in_saved_context = false;
             }
         }
     }
@@ -524,10 +503,10 @@ impl App {
     pub fn unselect(&mut self) {
         match self.state {
             AppState::ArticleList => {
-                if self.in_favorites_context {
-                    self.in_favorites_context = false;
-                    self.favorite_view_articles.clear();
-                    self.state = AppState::FavoriteFeedList;
+                if self.in_saved_context {
+                    self.in_saved_context = false;
+                    self.saved_view_articles.clear();
+                    self.state = AppState::SavedCategoryList;
                 } else {
                     self.state = AppState::FeedList;
                 }
@@ -551,7 +530,7 @@ impl App {
                 self.state = AppState::SettingsList;
             }
             AppState::ClearData => self.state = AppState::SettingsList,
-            AppState::FavoriteFeedList => {
+            AppState::SavedCategoryList => {
                 self.selected_tab = Tab::Feeds;
                 self.state = AppState::FeedList;
             }
@@ -596,28 +575,6 @@ pub fn visible_cat_only_items(
         .into_iter()
         .filter(|item| matches!(item, FeedTreeItem::Category { .. }))
         .collect()
-}
-
-/// Like `visible_tree_items` but only shows feeds that have at least one starred article.
-/// Categories with no visible descendants are hidden.
-pub fn visible_favorites_tree_items(
-    categories: &[Category],
-    feeds: &[Feed],
-    collapsed: &HashSet<CategoryId>,
-    starred_articles: &[Article],
-) -> Vec<FeedTreeItem> {
-    // Build set of feed indices whose title matches any starred article's source_feed.
-    let starred_titles: HashSet<&str> = starred_articles
-        .iter()
-        .map(|a| a.source_feed.as_str())
-        .collect();
-    let feed_filter: HashSet<usize> = feeds
-        .iter()
-        .enumerate()
-        .filter(|(_, f)| starred_titles.contains(f.title.as_str()))
-        .map(|(i, _)| i)
-        .collect();
-    visible_tree_items_filtered(categories, feeds, collapsed, Some(&feed_filter))
 }
 
 fn visible_tree_items_filtered(
@@ -743,10 +700,11 @@ mod tests {
             description: String::new(),
             link: title.to_string(),
             is_read: false,
-            is_starred: false,
+            is_saved: false,
             content: String::new(),
             image_url: None,
             source_feed: String::new(),
+            published_secs: None,
         }
     }
 
@@ -806,8 +764,8 @@ mod tests {
         let mut app = App::new();
         assert_eq!(app.selected_tab, Tab::Feeds);
         app.switch_tab_right();
-        assert_eq!(app.selected_tab, Tab::Favorites);
-        assert_eq!(app.state, AppState::FavoriteFeedList);
+        assert_eq!(app.selected_tab, Tab::Saved);
+        assert_eq!(app.state, AppState::SavedCategoryList);
         app.switch_tab_right();
         assert_eq!(app.selected_tab, Tab::Settings);
         assert_eq!(app.state, AppState::SettingsList);

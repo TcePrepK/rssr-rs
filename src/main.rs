@@ -63,12 +63,12 @@ async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()
             let mut arts = articles.clone();
             for art in &mut arts {
                 art.is_read = !art.link.is_empty() && app.user_data.read_links.contains(&art.link);
-                art.is_starred = !art.link.is_empty()
+                art.is_saved = !art.link.is_empty()
                     && app
                         .user_data
-                        .starred_articles
+                        .saved_articles
                         .iter()
-                        .any(|a| a.link == art.link);
+                        .any(|s| s.article.link == art.link);
                 art.source_feed = feed.title.clone();
             }
             feed.unread_count = arts.iter().filter(|a| !a.is_read).count();
@@ -121,9 +121,9 @@ async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()
 
 
             AppEvent::FullArticleFetched(source, art_idx, result) => match source {
-                FeedSource::Favorites => {
+                FeedSource::Saved => {
                     let status_msg = if let Some(article) =
-                        app.favorite_view_articles.get_mut(art_idx)
+                        app.saved_view_articles.get_mut(art_idx)
                     {
                         let msg = match result {
                             Ok(html) => {
@@ -206,12 +206,12 @@ fn on_feed_fetched(
 
             for art in &mut articles {
                 art.is_read = !art.link.is_empty() && app.user_data.read_links.contains(&art.link);
-                art.is_starred = !art.link.is_empty()
+                art.is_saved = !art.link.is_empty()
                     && app
                         .user_data
-                        .starred_articles
+                        .saved_articles
                         .iter()
-                        .any(|a| a.link == art.link);
+                        .any(|s| s.article.link == art.link);
                 art.source_feed = feed.title.clone();
                 if let Some(saved) = preserved.get(&art.link) {
                     art.content = saved.clone();

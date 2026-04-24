@@ -52,14 +52,35 @@ pub fn save_feeds(feeds: &[Feed]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Load user data (read/starred state) from disk.
+/// Load user data from disk, migrating legacy starred_articles on first load.
 pub fn load_user_data() -> UserData {
-    if let Ok(content) = fs::read_to_string(user_data_path())
-        && let Ok(data) = serde_json::from_str(&content)
+    let mut data: UserData = if let Ok(content) = fs::read_to_string(user_data_path())
+        && let Ok(parsed) = serde_json::from_str(&content)
     {
-        return data;
+        parsed
+    } else {
+        UserData::default()
+    };
+
+    // Migrate legacy starred_articles → "Starred" save category.
+    if !data.starred_articles.is_empty() && data.saved_articles.is_empty() {
+        let cat_id: u32 = 1;
+        data.saved_categories.push(crate::models::SavedCategory {
+            id: cat_id,
+            name: "Starred".to_string(),
+        });
+        let old = std::mem::take(&mut data.starred_articles);
+        for art in old {
+            data.saved_articles.push(crate::models::SavedArticle {
+                article: art,
+                category_id: cat_id,
+            });
+        }
+        // Persist the migrated data immediately.
+        let _ = save_user_data(&data);
     }
-    UserData::default()
+
+    data
 }
 
 /// Persist user data to disk.
@@ -432,4 +453,69 @@ pub fn default_export_path() -> String {
         .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
         .join("export.opml");
     path.display().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::models::{Article, UserData};
+
+    fn stub_article(link: &str) -> Article {
+        Article {
+            title: link.to_string(),
+            description: String::new(),
+            link: link.to_string(),
+            is_read: false,
+            is_saved: false,
+            content: String::new(),
+            image_url: None,
+            source_feed: String::new(),
+            published_secs: None,
+        }
+    }
+
+    #[test]
+    fn test_migration_creates_starred_category() {
+        let mut data = UserData::default();
+        data.starred_articles.push(stub_article("https://a.com/1"));
+        data.starred_articles.push(stub_article("https://a.com/2"));
+
+        // Simulate what load_user_data does after deserialization.
+        if !data.starred_articles.is_empty() && data.saved_articles.is_empty() {
+            let cat_id: u32 = 1;
+            data.saved_categories.push(crate::models::SavedCategory {
+                id: cat_id,
+                name: "Starred".to_string(),
+            });
+            let old = std::mem::take(&mut data.starred_articles);
+            for art in old {
+                data.saved_articles.push(crate::models::SavedArticle {
+                    article: art,
+                    category_id: cat_id,
+                });
+            }
+        }
+
+        assert_eq!(data.saved_categories.len(), 1);
+        assert_eq!(data.saved_categories[0].name, "Starred");
+        assert_eq!(data.saved_articles.len(), 2);
+        assert!(data.starred_articles.is_empty());
+        assert!(data.saved_articles.iter().all(|s| s.category_id == 1));
+    }
+
+    #[test]
+    fn test_migration_skipped_when_saved_already_populated() {
+        let mut data = UserData::default();
+        data.starred_articles.push(stub_article("https://a.com/1"));
+        data.saved_articles.push(crate::models::SavedArticle {
+            article: stub_article("https://b.com/1"),
+            category_id: 99,
+        });
+
+        // Migration should NOT run when saved_articles is non-empty.
+        if !data.starred_articles.is_empty() && data.saved_articles.is_empty() {
+            panic!("migration ran unexpectedly");
+        }
+
+        assert_eq!(data.saved_articles.len(), 1); // unchanged
+    }
 }

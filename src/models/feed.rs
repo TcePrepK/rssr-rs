@@ -19,6 +19,6 @@ impl Article {
     }
 
     pub fn star_icon(&self) -> &'static str {
-        if self.is_starred { "★ " } else { "" }
+        if self.is_saved { "★ " } else { "" }
     }
 }

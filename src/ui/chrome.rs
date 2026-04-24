@@ -18,7 +18,7 @@ use super::{border_set, BASE, GREEN, MANTLE, MAUVE, SUBTEXT0, SURFACE0, YELLOW};
 pub(super) fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
     let tabs = [
         (" Feeds ", Tab::Feeds),
-        (" ⭐ Favorites ", Tab::Favorites),
+        (" ★ Saved ", Tab::Saved),
         (" Settings ", Tab::Settings),
     ];
 
@@ -117,9 +117,9 @@ pub(super) fn draw_progress_bar(f: &mut Frame, app: &App, area: Rect) {
 
 pub(super) fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
     let hints = match app.state {
-        AppState::ArticleDetail => " [↑/↓] Scroll   [m] Read   [s] Star   [Esc] Back   [q] Quit ",
+        AppState::ArticleDetail => " [↑/↓] Scroll   [m] Read   [s] Save   [Esc] Back   [q] Quit ",
         AppState::ArticleList => {
-            " [↑/↓] Navigate   [Enter] Open   [m] Read   [s] Star   [Esc] Back   [q] Quit "
+            " [↑/↓] Navigate   [Enter] Open   [m] Read   [s] Save   [Esc] Back   [q] Quit "
         }
         AppState::SettingsList => {
             " [↑/↓] Navigate   [Enter] Select   [Tab/Shift+Tab] Switch Tab   [Esc] Back   [q] Quit "
@@ -130,13 +130,18 @@ pub(super) fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         AppState::ClearData | AppState::ClearArticleCache => {
             " [Enter] Confirm   [Esc] Cancel "
         }
-        AppState::FavoriteFeedList => {
+        AppState::SavedCategoryList => {
             " [↑/↓] Navigate   [Enter] Open   [Tab/Shift+Tab] Switch Tab   [q] Quit "
         }
         AppState::FeedEditor => {
             " [↑/↓] Navigate   [Tab] Switch Panel   [Enter] Toggle   [Space] Move   [a] Add Feed   [n] New Category   [r] Rename   [d] Delete   [Esc] Back "
         }
         AppState::FeedEditorRename => " [Enter] Confirm   [Esc] Cancel ",
+        AppState::CategoryPicker => " [↑/↓] Navigate   [Enter] Select   [Esc] Cancel ",
+        AppState::SavedCategoryEditor => {
+            " [↑/↓] Navigate   [r] Rename   [d] Delete   [Esc] Back "
+        }
+        AppState::SavedCategoryEditorRename => " [Enter] Confirm   [Esc] Cancel ",
         AppState::FeedList => {
             " [↑/↓] Navigate   [Enter] Open/Expand   [r] Refresh   [R] Fetch All   [e] Edit   [Tab/Shift+Tab] Switch Tab   [q] Quit "
         }

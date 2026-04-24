@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame,
 };
 
@@ -13,7 +13,7 @@ use crate::{
     models::{AppState, SettingsItem},
 };
 
-use super::{border_set, BASE, GREEN, MAUVE, MANTLE, PEACH, RED, SUBTEXT0, SURFACE0, TEXT};
+use super::{border_set, BASE, GREEN, MAUVE, MANTLE, PEACH, RED, SUBTEXT0, SURFACE0, TEXT, YELLOW};
 
 pub(super) fn draw_settings_tab(f: &mut Frame, app: &App, area: Rect) {
     match app.state {
@@ -81,12 +81,19 @@ fn draw_settings(f: &mut Frame, app: &App, area: Rect) {
             on: auto_fetch,
         },
         Row::Spacer,
-        Row::SectionHeader { label: " Appearance", is_last: true },
+        Row::SectionHeader { label: " Appearance", is_last: false },
         Row::Toggle {
             item: SettingsItem::BorderStyle,
             label: "[ Rounded Borders ]",
-            in_last: true,
+            in_last: false,
             on: rounded,
+        },
+        Row::Spacer,
+        Row::SectionHeader { label: " Saved Articles", is_last: true },
+        Row::Item {
+            item: SettingsItem::SavedCategoryEditor,
+            label: "[ Saved Category Editor ]",
+            in_last: true,
         },
     ];
 
@@ -174,4 +181,66 @@ fn draw_settings(f: &mut Frame, app: &App, area: Rect) {
         ));
 
     f.render_widget(List::new(list_items).block(block), area);
+}
+
+pub(super) fn draw_saved_category_editor(f: &mut Frame, app: &App, area: Rect) {
+    let rounded = app.user_data.border_rounded;
+    let block = Block::default()
+        .title(" Saved Category Editor  [r] rename  [d] delete  [Esc] back ")
+        .borders(Borders::ALL)
+        .border_set(border_set(rounded))
+        .border_style(Style::default().fg(MAUVE))
+        .style(Style::default().bg(BASE));
+
+    f.render_widget(block.clone(), area);
+    let inner = block.inner(area);
+
+    if app.user_data.saved_categories.is_empty() {
+        let msg = Paragraph::new("  No categories yet. Save an article with [s] to create one.")
+            .style(Style::default().fg(SUBTEXT0));
+        f.render_widget(msg, inner);
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .user_data
+        .saved_categories
+        .iter()
+        .enumerate()
+        .map(|(i, cat)| {
+            let count = app
+                .user_data
+                .saved_articles
+                .iter()
+                .filter(|s| s.category_id == cat.id)
+                .count();
+
+            let name_span = if app.state == AppState::SavedCategoryEditorRename
+                && i == app.saved_cat_editor_cursor
+            {
+                Span::styled(
+                    format!("  {}|", app.editor_input),
+                    Style::default().fg(YELLOW),
+                )
+            } else {
+                let style = if i == app.saved_cat_editor_cursor {
+                    Style::default().bg(SURFACE0).fg(MAUVE)
+                } else {
+                    Style::default().fg(TEXT)
+                };
+                Span::styled(format!("  {}", cat.name), style)
+            };
+
+            ListItem::new(Line::from(vec![
+                name_span,
+                Span::styled(
+                    format!("  [{count} article{}]", if count == 1 { "" } else { "s" }),
+                    Style::default().fg(SUBTEXT0),
+                ),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items);
+    f.render_widget(list, inner);
 }

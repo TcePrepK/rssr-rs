@@ -61,6 +61,10 @@ pub(super) fn handle_settings(app: &mut App, key: KeyEvent) -> bool {
                 let state = if app.user_data.border_rounded { "ON" } else { "OFF" };
                 app.set_status(format!("Rounded Borders: {state}"));
             }
+            SettingsItem::SavedCategoryEditor => {
+                app.saved_cat_editor_cursor = 0;
+                app.state = AppState::SavedCategoryEditor;
+            }
         },
         _ => {}
     }
@@ -162,7 +166,8 @@ pub(super) fn handle_confirm_delete_all(app: &mut App, key: KeyEvent) {
             app.feeds.clear();
             app.categories.clear();
             app.user_data = crate::models::UserData::default();
-            app.favorite_view_articles.clear();
+            app.saved_view_articles.clear();
+            app.in_saved_context = false;
             app.selected_feed = 0;
             app.selected_article = 0;
             app.sidebar_cursor = 0;
@@ -247,6 +252,85 @@ pub(super) fn handle_opml_path(app: &mut App, key: KeyEvent, tx: &UnboundedSende
             app.opml_path_input.pop();
         }
         KeyCode::Esc => app.unselect(),
+        _ => {}
+    }
+}
+
+pub(super) fn handle_saved_category_editor(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Up => {
+            if app.saved_cat_editor_cursor > 0 {
+                app.saved_cat_editor_cursor -= 1;
+            }
+        }
+        KeyCode::Down => {
+            if app.saved_cat_editor_cursor + 1 < app.user_data.saved_categories.len() {
+                app.saved_cat_editor_cursor += 1;
+            }
+        }
+        KeyCode::Char('r') => {
+            if app.saved_cat_editor_cursor < app.user_data.saved_categories.len() {
+                app.editor_input = app.user_data.saved_categories[app.saved_cat_editor_cursor]
+                    .name
+                    .clone();
+                app.state = AppState::SavedCategoryEditorRename;
+            }
+        }
+        KeyCode::Char('d') => {
+            if app.saved_cat_editor_cursor < app.user_data.saved_categories.len() {
+                let cat_id = app.user_data.saved_categories[app.saved_cat_editor_cursor].id;
+                let article_count = app
+                    .user_data
+                    .saved_articles
+                    .iter()
+                    .filter(|s| s.category_id == cat_id)
+                    .count();
+                app.user_data.saved_articles.retain(|s| s.category_id != cat_id);
+                app.user_data.saved_categories.remove(app.saved_cat_editor_cursor);
+                if app.saved_cat_editor_cursor > 0
+                    && app.saved_cat_editor_cursor >= app.user_data.saved_categories.len()
+                {
+                    app.saved_cat_editor_cursor -= 1;
+                }
+                let _ = save_user_data(&app.user_data);
+                app.set_status(format!(
+                    "Category deleted. {article_count} article(s) unsaved."
+                ));
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.state = AppState::SettingsList;
+        }
+        _ => {}
+    }
+}
+
+pub(super) fn handle_saved_category_editor_rename(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Enter => {
+            let name = app.editor_input.trim().to_string();
+            if !name.is_empty() {
+                if let Some(cat) = app
+                    .user_data
+                    .saved_categories
+                    .get_mut(app.saved_cat_editor_cursor)
+                {
+                    cat.name = name;
+                }
+                let _ = save_user_data(&app.user_data);
+                app.set_status("Category renamed.".to_string());
+            }
+            app.editor_input.clear();
+            app.state = AppState::SavedCategoryEditor;
+        }
+        KeyCode::Char(c) => app.editor_input.push(c),
+        KeyCode::Backspace => {
+            app.editor_input.pop();
+        }
+        KeyCode::Esc => {
+            app.editor_input.clear();
+            app.state = AppState::SavedCategoryEditor;
+        }
         _ => {}
     }
 }
