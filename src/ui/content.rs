@@ -353,10 +353,16 @@ pub(super) fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     app.sidebar_list_state.select(Some(cursor));
-    f.render_stateful_widget(List::new(items), list_area, &mut app.sidebar_list_state);
-
     let total = tree.len();
-    if total > list_area.height as usize {
+    let has_scrollbar = total > list_area.height as usize;
+    let list_render_area = if has_scrollbar {
+        Rect { width: list_area.width.saturating_sub(1), ..list_area }
+    } else {
+        list_area
+    };
+    f.render_stateful_widget(List::new(items), list_render_area, &mut app.sidebar_list_state);
+
+    if has_scrollbar {
         let mut scrollbar_state = ScrollbarState::new(total)
             .position(cursor);
         f.render_stateful_widget(
@@ -493,10 +499,16 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     app.article_list_state.select(Some(app.selected_article));
-    f.render_stateful_widget(List::new(items), list_area, &mut app.article_list_state);
-
     let total = articles.len();
-    if total > list_area.height as usize {
+    let has_scrollbar = total > list_area.height as usize;
+    let list_render_area = if has_scrollbar {
+        Rect { width: list_area.width.saturating_sub(1), ..list_area }
+    } else {
+        list_area
+    };
+    f.render_stateful_widget(List::new(items), list_render_area, &mut app.article_list_state);
+
+    if has_scrollbar {
         let mut scrollbar_state = ScrollbarState::new(total)
             .position(app.selected_article);
         f.render_stateful_widget(
@@ -730,9 +742,15 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect, is_p
         );
     }
 
-    f.render_widget(paragraph, content_area);
+    let has_scrollbar = line_count > content_area.height as usize;
+    let para_render_area = if has_scrollbar {
+        Rect { width: content_area.width.saturating_sub(1), ..content_area }
+    } else {
+        content_area
+    };
+    f.render_widget(paragraph, para_render_area);
 
-    if !is_preview && line_count > content_area.height as usize {
+    if has_scrollbar {
         let mut scrollbar_state = ScrollbarState::new(line_count)
             .position(scroll_offset as usize);
         f.render_stateful_widget(
