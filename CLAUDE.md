@@ -21,36 +21,9 @@ rule), fix it in the same commit.
 
 ---
 
-## Vault
-
-Project knowledge lives in `vault/`. The LLM maintains it; humans drop raw inputs into `vault/raw/`.
-
-```
-vault/
-├── INDEX.md          ← start here
-├── raw/              ← drop inputs here (articles, code dumps, notes)
-├── wiki/             ← LLM-maintained knowledge tree
-│   ├── INDEX.md      ← entry point for wiki
-│   ├── log.md        append-only operation log
-│   ├── project/      overview
-│   ├── architecture/ modules, state machine, event loop, keybindings, storage
-│   ├── models/       core types, navigation, events
-│   ├── ui/           theme
-│   ├── behaviors/    favorites, feed-tree, add-feed flow
-│   ├── workflow/     development, commits
-│   └── user/         preferences
-└── output/           ← LLM-generated artifacts
-```
-
-**Session start**: read `vault/wiki/INDEX.md`, navigate to relevant nodes as needed, then read `TASKS.md`.
-Use vault for architectural context; don't load the full tree — navigate to what the current task needs.
-
----
-
 ## Task Workflow
 
-1. **On session start**: read vault (above), then read `TASKS.md`. Pick up
-   the highest-priority incomplete item.
+1. **On session start**: read `TASKS.md`. Pick up the highest-priority incomplete item.
 2. **Priority indicators**: tasks marked with [!] are high-priority. Always pick these before non-flagged tasks
    within the same category; otherwise take the topmost incomplete item.
 3. **If anything is unclear**: stop and ask the user. Do not assume scope, layout, or behavior. Just ask directly in
@@ -201,30 +174,6 @@ src/
 
 ---
 
-## Feature Checklists
-
-See `CHECKLISTS.md` — read it before implementing new types, AppStates, keybindings, background tasks, or persisted
-data.
-
----
-
-## Commit Discipline (mandatory)
-
-Every commit must be **atomic** — one logical change per commit. Never bundle unrelated changes.
-
-### Commit types
-
-| Prefix      | Use for                                                                          |
-|-------------|----------------------------------------------------------------------------------|
-| `feat:`     | New user-visible behaviour or capability                                         |
-| `fix:`      | Bug correction (logic, crash, wrong value)                                       |
-| `ui:`       | Visual/layout changes with no behaviour change (colours, borders, spacing, text) |
-| `refactor:` | Internal restructuring with no behaviour change                                  |
-| `perf:`     | Performance improvement                                                          |
-| `test:`     | Adding or fixing tests only                                                      |
-| `docs:`     | Documentation files only (CLAUDE.md, README, ARCHITECTURE.md, etc.)              |
-| `chore:`    | Tooling, CI, dependency, config — nothing a user would notice                    |
-
 ### Splitting rules
 
 - **File-level**: if a single file contains hunks of different types, use `git add -p` to stage only the relevant hunks
@@ -232,28 +181,3 @@ Every commit must be **atomic** — one logical change per commit. Never bundle 
 - **Minimum commits per session**: one per type touched. Changing a handler (fix), its rendering (ui), and CLAUDE.md (
   docs) = 3 commits.
 - Never mix `feat`/`fix`/`ui`/`refactor` with `docs` in one commit.
-
----
-
-## Testing Workflow (mandatory before reporting done)
-
-```
-cargo check     # zero errors
-cargo test      # all tests pass
-cargo clippy    # zero warnings
-cargo run       # visual verify of the affected feature
-```
-
-Never report a visual feature as done without running the app.
-
----
-
-## Common Pitfalls
-
-- **Mutating App logic inside `ui/`** — draw functions are pure rendering only.
-- **`std::fs` outside `storage.rs`** — all file access goes through storage.
-- **`.await` in the event loop** — always use `tokio::spawn`; the loop must never block.
-- **Hardcoding `Color::Rgb(...)`** — use the named constants in `ui/mod.rs`.
-- **Forgetting `#[derive(Debug)]`** on new public types.
-- **Adding a dep for a single utility function** — use stdlib or an existing dep.
-- **Not updating CLAUDE.md or ARCHITECTURE.md after a structural change.**
