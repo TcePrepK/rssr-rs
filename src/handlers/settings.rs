@@ -255,26 +255,25 @@ pub(super) fn handle_opml_path(app: &mut App, key: KeyEvent, tx: &UnboundedSende
 pub(super) fn handle_saved_category_editor(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Up => {
-            if app.saved_cat_editor_cursor > 0 {
-                app.saved_cat_editor_cursor -= 1;
-            }
+            app.saved_cat_editor_scroll.move_up();
         }
         KeyCode::Down => {
-            if app.saved_cat_editor_cursor + 1 < app.user_data.saved_categories.len() {
-                app.saved_cat_editor_cursor += 1;
-            }
+            let len = app.user_data.saved_categories.len();
+            app.saved_cat_editor_scroll.move_down(len);
         }
         KeyCode::Char('r') => {
-            if app.saved_cat_editor_cursor < app.user_data.saved_categories.len() {
-                app.editor_input = app.user_data.saved_categories[app.saved_cat_editor_cursor]
+            let cursor = app.saved_cat_editor_scroll.cursor;
+            if cursor < app.user_data.saved_categories.len() {
+                app.editor_input = app.user_data.saved_categories[cursor]
                     .name
                     .clone();
                 app.state = AppState::SavedCategoryEditorRename;
             }
         }
         KeyCode::Char('d') => {
-            if app.saved_cat_editor_cursor < app.user_data.saved_categories.len() {
-                let cat_id = app.user_data.saved_categories[app.saved_cat_editor_cursor].id;
+            let cursor = app.saved_cat_editor_scroll.cursor;
+            if cursor < app.user_data.saved_categories.len() {
+                let cat_id = app.user_data.saved_categories[cursor].id;
                 let article_count = app
                     .user_data
                     .saved_articles
@@ -282,12 +281,9 @@ pub(super) fn handle_saved_category_editor(app: &mut App, key: KeyEvent) {
                     .filter(|s| s.category_id == cat_id)
                     .count();
                 app.user_data.saved_articles.retain(|s| s.category_id != cat_id);
-                app.user_data.saved_categories.remove(app.saved_cat_editor_cursor);
-                if app.saved_cat_editor_cursor > 0
-                    && app.saved_cat_editor_cursor >= app.user_data.saved_categories.len()
-                {
-                    app.saved_cat_editor_cursor -= 1;
-                }
+                app.user_data.saved_categories.remove(cursor);
+                let new_len = app.user_data.saved_categories.len();
+                app.saved_cat_editor_scroll.clamp(new_len);
                 let _ = save_user_data(&app.user_data);
                 app.set_status(format!(
                     "Category deleted. {article_count} article(s) unsaved."
@@ -309,7 +305,7 @@ pub(super) fn handle_saved_category_editor_rename(app: &mut App, key: KeyEvent) 
                 if let Some(cat) = app
                     .user_data
                     .saved_categories
-                    .get_mut(app.saved_cat_editor_cursor)
+                    .get_mut(app.saved_cat_editor_scroll.cursor)
                 {
                     cat.name = name;
                 }
