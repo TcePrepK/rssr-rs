@@ -4,10 +4,12 @@ mod core_types;
 mod events;
 mod navigation;
 pub mod feed;
+pub mod scroll;
 
 pub use core_types::*;
 pub use events::*;
 pub use navigation::*;
+pub use scroll::ListScroll;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
