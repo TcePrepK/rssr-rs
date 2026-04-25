@@ -18,7 +18,7 @@ use super::{border_set, BASE, GREEN, MANTLE, MAUVE, SUBTEXT0, SURFACE0, YELLOW};
 pub(super) fn draw_tab_bar(f: &mut Frame, app: &App, area: Rect) {
     let tabs = [
         (" Feeds ", Tab::Feeds),
-        (" ★ Saved ", Tab::Saved),
+        (" Saved ", Tab::Saved),
         (" Settings ", Tab::Settings),
     ];
 

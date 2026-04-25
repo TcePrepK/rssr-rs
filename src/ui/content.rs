@@ -474,14 +474,6 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(TEXT)
             };
 
-            let read_icon_style = if article.is_saved {
-                Style::default().fg(YELLOW)
-            } else if article.is_read {
-                Style::default().fg(SUBTEXT0)
-            } else {
-                Style::default().fg(BLUE)
-            };
-
             let is_selected = app.selected_article == i
                 && (app.state == AppState::ArticleList || app.in_saved_context);
             // read_icon (2) = 2 chars prefix
@@ -493,7 +485,7 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
                 article.title.clone()
             };
             ListItem::new(Line::from(vec![
-                Span::styled(article.read_icon(), read_icon_style),
+                Span::styled(article.get_icon(), article.get_icon_style()),
                 Span::raw(displayed_title),
             ]))
             .style(style)
