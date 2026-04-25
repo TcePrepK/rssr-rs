@@ -2,11 +2,11 @@
 name = "brochure"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 description = "A terminal RSS reader built with Ratatui"
 license = "MIT"
 authors = ["TcePrepK"]
 repository = "https://github.com/TcePrepK/brochure"
-homepage = "https://github.com/TcePrepK/brochure"
 readme = "README.md"
 keywords = ["rss", "tui", "terminal", "reader", "atom"]
 categories = ["command-line-utilities"]

@@ -13,9 +13,6 @@
 - Establish a new non-negotiable rule
 - **Change the task workflow**
 
-Update `ARCHITECTURE.md` whenever you change the state machine, keybindings, App struct shape, or any design detail a
-human would want to reference.
-
 **Do not let CLAUDE.md drift from the code.** If you notice a stale reference (wrong file path, removed type, changed
 rule), fix it in the same commit.
 
