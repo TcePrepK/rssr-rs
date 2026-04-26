@@ -4,7 +4,7 @@
 docs
 .idea
 TASKS.md
-done-tasks/
+changelog/
 vault
 .worktrees/
 .superpowers/
