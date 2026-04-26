@@ -1,6 +1,6 @@
 use crate::models::{
     AddFeedStep, AppState, Article, Category, CategoryId, EditorPanel, Feed, FeedEditorMode,
-    FeedTreeItem, ListScroll, SettingsItem, Tab, UserData, FAVORITES_URL,
+    FeedTreeItem, ListScroll, SettingsItem, Tab, TextScroll, UserData, FAVORITES_URL,
 };
 use crate::storage::{article_cache_size, load_categories, load_feeds, load_user_data};
 use ratatui::widgets::ListState;
@@ -16,7 +16,7 @@ pub struct App {
     pub input: String,
     pub user_data: UserData,
     pub settings_selected: SettingsItem,
-    pub scroll_offset: u16,
+    pub article_scroll: TextScroll,
     /// Cached line count of the currently-viewed article for scroll capping.
     pub content_line_count: usize,
     /// Height (in terminal rows) of the article content viewport — set each draw frame.
@@ -168,7 +168,7 @@ impl App {
             input: String::new(),
             user_data,
             settings_selected: SettingsItem::ImportOpml,
-            scroll_offset: 0,
+            article_scroll: TextScroll::default(),
             content_line_count: 0,
             content_area_height: 20,
             tick: 0,
@@ -475,7 +475,6 @@ impl App {
                 };
                 if has_articles {
                     self.state = AppState::ArticleDetail;
-                    self.scroll_offset = 0;
                     let content = if self.in_category_context {
                         let (fi, ai) = self.category_view_articles[self.selected_article];
                         self.feeds[fi].articles[ai].content.clone()
@@ -872,7 +871,7 @@ mod tests {
 
         app.select(); // ArticleList -> ArticleDetail
         assert_eq!(app.state, AppState::ArticleDetail);
-        assert_eq!(app.scroll_offset, 0);
+        assert_eq!(app.article_scroll.get(""), 0);
 
         app.unselect(); // -> ArticleList
         assert_eq!(app.state, AppState::ArticleList);
