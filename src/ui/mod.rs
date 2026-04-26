@@ -116,8 +116,17 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     chrome::draw_tab_bar(f, app, chunks[0]);
     chrome::draw_footer(f, app, chunks[2]);
 
-    if matches!(app.state, AppState::SavedCategoryEditor | AppState::SavedCategoryEditorRename) {
+    if matches!(
+        app.state,
+        AppState::SavedCategoryEditor
+            | AppState::SavedCategoryEditorRename
+            | AppState::SavedCategoryEditorDeleteConfirm
+    ) {
         settings::draw_saved_category_editor(f, app, chunks[1]);
+        // For delete confirm, also overlay the confirmation popup.
+        if app.state == AppState::SavedCategoryEditorDeleteConfirm {
+            popups::draw_confirm_delete_saved_cat(f, app);
+        }
         return;
     }
 

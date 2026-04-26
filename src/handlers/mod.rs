@@ -34,6 +34,9 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, tx: &UnboundedSender<AppEv
         AppState::SavedCategoryEditorRename => {
             settings::handle_saved_category_editor_rename(app, key)
         }
+        AppState::SavedCategoryEditorDeleteConfirm => {
+            settings::handle_saved_category_editor_delete_confirm(app, key)
+        }
     }
     false
 }
