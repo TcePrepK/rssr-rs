@@ -20,5 +20,14 @@
       "Improved category view footer with stats.",
       "Better performance for saved and category content."
     ]
+  },
+  {
+    "version": "0.3.2",
+    "date": "2026-04-30",
+    "summary": "Stability updates and quality-of-life improvements for a better user experience.",
+    "highlights": [
+      "Saved list now grows when footer is empty",
+      "Minor bug fixes and UI improvements"
+    ]
   }
 ]
