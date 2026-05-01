@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph, ScrollbarState},
     Frame,
 };
 
@@ -348,8 +348,19 @@ pub(super) fn draw_category_picker(f: &mut Frame, app: &App) {
 
     let mut lines: Vec<Line> = Vec::new();
 
-    for (i, cat) in cats.iter().enumerate() {
-        let is_selected = app.category_picker_cursor == i;
+    // 3 fixed rows: "New category", separator, "✕ Unsave"
+    let fixed_rows = 3u16;
+    let visible_cats = inner.height.saturating_sub(fixed_rows) as usize;
+    let scroll_top = if visible_cats == 0 || cats_len <= visible_cats {
+        0usize
+    } else {
+        let cursor = app.category_picker_cursor.min(cats_len.saturating_sub(1));
+        cursor.saturating_sub(visible_cats.saturating_sub(1)).min(cats_len - visible_cats)
+    };
+
+    for (i, cat) in cats[scroll_top..].iter().take(visible_cats).enumerate() {
+        let real_idx = scroll_top + i;
+        let is_selected = app.category_picker_cursor == real_idx;
         let style = if is_selected {
             Style::default().bg(SURFACE0).fg(MAUVE)
         } else {
@@ -391,4 +402,15 @@ pub(super) fn draw_category_picker(f: &mut Frame, app: &App) {
 
     let para = Paragraph::new(lines);
     f.render_widget(para, inner);
+
+    if cats_len > visible_cats {
+        let mut sb_state = ScrollbarState::new(cats_len)
+            .position(app.category_picker_cursor.min(cats_len.saturating_sub(1)));
+        f.render_stateful_widget(
+            ratatui::widgets::Scrollbar::new(ratatui::widgets::ScrollbarOrientation::VerticalRight)
+                .style(ratatui::style::Style::default().fg(super::SURFACE0)),
+            inner,
+            &mut sb_state,
+        );
+    }
 }

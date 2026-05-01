@@ -9,7 +9,7 @@ use ratatui::{
 use ratatui::prelude::Stylize;
 
 use crate::{
-    app::{visible_tree_items, App},
+    app::{visible_tree_items, App, CategoryViewItem},
     models::{AppState, FeedTreeItem, Tab},
 };
 
@@ -110,7 +110,11 @@ pub(super) fn draw_feeds_tab(f: &mut Frame, app: &mut App, area: Rect) {
 
     match app.state {
         AppState::FeedList | AppState::AddFeed => {
-            draw_article_list(f, app, cols[1]);
+            if app.selected_sidebar_category.is_some() {
+                draw_category_article_list(f, app, cols[1]);
+            } else {
+                draw_article_list(f, app, cols[1]);
+            }
         }
         AppState::ArticleList => {
             draw_three_panel(f, app, cols[1], true);
@@ -375,6 +379,93 @@ pub(super) fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
 
     if let Some(pb) = maybe_progress {
         super::chrome::draw_progress_bar(f, app, pb);
+    }
+}
+
+/// Render the article list panel when `selected_sidebar_category` is Some —
+/// shows articles from all feeds in the category, grouped with feed-name headers.
+fn draw_category_article_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let cat_id = match app.selected_sidebar_category {
+        Some(id) => id,
+        None => return,
+    };
+    let cat_name = app
+        .categories
+        .iter()
+        .find(|c| c.id == cat_id)
+        .map(|c| c.name.as_str())
+        .unwrap_or("Category");
+
+    let block = Block::default()
+        .border_set(border_set(app.user_data.border_rounded))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(SURFACE0))
+        .bg(BASE)
+        .title(Span::styled(
+            format!(" {} ", cat_name),
+            Style::default().fg(BLUE).add_modifier(Modifier::BOLD),
+        ));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if app.category_view_items.is_empty() {
+        f.render_widget(
+            Paragraph::new(" No articles in this category.")
+                .style(Style::default().fg(SUBTEXT0)),
+            inner,
+        );
+        return;
+    }
+
+    let items: Vec<ListItem> = app
+        .category_view_items
+        .iter()
+        .map(|item| match item {
+            CategoryViewItem::Header(title) => ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("── {} ──", title),
+                    Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
+                ),
+            ])),
+            CategoryViewItem::Article { feeds_idx, article_idx } => {
+                let article = &app.feeds[*feeds_idx].articles[*article_idx];
+                let style = if article.is_read {
+                    Style::default().fg(SUBTEXT0)
+                } else {
+                    Style::default().fg(TEXT)
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(article.get_icon(), article.get_icon_style()),
+                    Span::raw(truncate_title(&article.title, inner.width as usize - 2)),
+                ]))
+                .style(style)
+            }
+        })
+        .collect();
+
+    let total = app.category_view_items.len();
+    let has_scrollbar = total > inner.height as usize;
+    let list_render_area = if has_scrollbar {
+        Rect { width: inner.width.saturating_sub(1), ..inner }
+    } else {
+        inner
+    };
+    // Use article_list_state for scrolling (reset selection so nothing is highlighted)
+    app.article_list_state.select(None);
+    f.render_stateful_widget(
+        List::new(items),
+        list_render_area,
+        &mut app.article_list_state,
+    );
+    if has_scrollbar {
+        let mut sb_state = ScrollbarState::new(total).position(0);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::default().fg(SURFACE0)),
+            inner,
+            &mut sb_state,
+        );
     }
 }
 

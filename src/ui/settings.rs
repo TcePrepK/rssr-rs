@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 
@@ -176,7 +176,7 @@ fn draw_settings(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(List::new(list_items).block(block), area);
 }
 
-pub(super) fn draw_saved_category_editor(f: &mut Frame, app: &App, area: Rect) {
+pub(super) fn draw_saved_category_editor(f: &mut Frame, app: &mut App, area: Rect) {
     let rounded = app.user_data.border_rounded;
     let block = Block::default()
         .title(" Saved Category Editor  [r] rename  [d] delete  [Esc] back ")
@@ -209,14 +209,14 @@ pub(super) fn draw_saved_category_editor(f: &mut Frame, app: &App, area: Rect) {
                 .count();
 
             let name_span = if app.state == AppState::SavedCategoryEditorRename
-                && i == app.saved_cat_editor_cursor
+                && i == app.saved_cat_editor_scroll.cursor
             {
                 Span::styled(
                     format!("  {}|", app.editor_input),
                     Style::default().fg(YELLOW),
                 )
             } else {
-                let style = if i == app.saved_cat_editor_cursor {
+                let style = if i == app.saved_cat_editor_scroll.cursor {
                     Style::default().bg(SURFACE0).fg(MAUVE)
                 } else {
                     Style::default().fg(TEXT)
@@ -234,6 +234,26 @@ pub(super) fn draw_saved_category_editor(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items);
-    f.render_widget(list, inner);
+    let total = app.user_data.saved_categories.len();
+    let has_scrollbar = total > inner.height as usize;
+    let list_render_area = if has_scrollbar {
+        Rect { width: inner.width.saturating_sub(1), ..inner }
+    } else {
+        inner
+    };
+    f.render_stateful_widget(
+        List::new(items),
+        list_render_area,
+        &mut app.saved_cat_editor_scroll.list_state,
+    );
+    if has_scrollbar {
+        let mut sb_state = ScrollbarState::new(total)
+            .position(app.saved_cat_editor_scroll.cursor);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::default().fg(super::SURFACE0)),
+            inner,
+            &mut sb_state,
+        );
+    }
 }
