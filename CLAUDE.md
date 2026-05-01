@@ -115,6 +115,10 @@ User may reply "y", adjust individual models, drop agents, or merge subtasks. In
 
 Use the `Agent` tool. Independent subtasks launch simultaneously. Sequential subtasks (B depends on A's output) chain.
 
+**One agent per file group:** Subtasks that all edit the same file must be merged into a single agent. Never split same-file changes across multiple agents — it causes redundant file reads and potential conflicts.
+
+**Ollama dispatch uses `Bash`, not `Agent`:** Trivial tasks routed to `ollama` must be dispatched with the `Bash` tool running `ollama_agent.py`. The `Agent` tool always hits the Claude API regardless of any model label. Apply the returned content with `Edit` or `Write`.
+
 Each agent prompt must include:
 
 - Exact file paths to read/edit
