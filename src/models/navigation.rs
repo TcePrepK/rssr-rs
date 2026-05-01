@@ -1,3 +1,5 @@
+use super::CategoryId;
+
 /// Application navigation states.
 #[derive(PartialEq, Clone, Debug)]
 pub enum AppState {
@@ -138,6 +140,6 @@ pub enum FeedEditorMode {
     },
     /// Typing a name for a new category. None = root level, Some = subcategory.
     NewCategory {
-        parent_id: Option<crate::models::CategoryId>,
+        parent_id: Option<CategoryId>,
     },
 }
