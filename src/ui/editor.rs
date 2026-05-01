@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::{
-    border_set, BASE, BLUE, CATEGORY_COLORS, GREEN, MANTLE, MAUVE, SUBTEXT0, SURFACE0, TEXT,
-    YELLOW,
+    border_set, tree_connector, tree_indent, BASE, BLUE, CATEGORY_COLORS, GREEN, MANTLE, MAUVE,
+    SUBTEXT0, SURFACE0, TEXT, YELLOW,
 };
 
 pub(super) fn draw_feed_editor(f: &mut Frame, app: &App, area: Rect) {
@@ -71,9 +71,9 @@ fn draw_editor_feeds(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     let tree = visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed);
+    let rounded = app.user_data.border_rounded;
 
-    // Build mixed rendering: category headers (non-interactive) + feed items (interactive).
-    // full_idx_to_visual maps full-tree index → visual list index for feeds only.
+    // full_idx_to_visual maps full-tree index → visual list index (for scroll tracking).
     let mut full_idx_to_visual: std::collections::HashMap<usize, usize> =
         std::collections::HashMap::new();
     let mut visual_idx = 0usize;
@@ -90,14 +90,16 @@ fn draw_editor_feeds(f: &mut Frame, app: &App, area: Rect) {
                     .map(|c| c.name.as_str())
                     .unwrap_or("?");
                 let color = CATEGORY_COLORS[(*id % CATEGORY_COLORS.len() as u64) as usize];
-                let indent = "  ".repeat(*depth as usize);
+                let indent = tree_indent(&tree, full_idx, *depth);
+                let connector = tree_connector(&tree, full_idx, *depth, rounded, "");
                 let icon = if *collapsed { "▶" } else { "▼" };
 
                 // Category headers are always non-interactive; no cursor highlight.
                 // During a feed move the drop-preview arrow (inserted after) shows the target.
                 full_idx_to_visual.insert(full_idx, visual_idx);
                 items.push(ListItem::new(Line::from(vec![
-                    Span::raw(indent),
+                    Span::styled(indent, Style::default().fg(SURFACE0)),
+                    Span::styled(connector, Style::default().fg(SURFACE0)),
                     Span::styled(
                         format!("{cat_name} {icon}"),
                         Style::default().fg(color).add_modifier(Modifier::BOLD),
@@ -108,11 +110,18 @@ fn draw_editor_feeds(f: &mut Frame, app: &App, area: Rect) {
             FeedTreeItem::Feed { feeds_idx, depth } => {
                 has_any_feed = true;
                 let feed = &app.feeds[*feeds_idx];
-                let indent = "  ".repeat(*depth as usize);
+                let indent = tree_indent(&tree, full_idx, *depth);
+                let connector = tree_connector(&tree, full_idx, *depth, rounded, "   ");
                 let selected = app.editor_cursor == full_idx;
                 let is_ghost = moving_origin == Some(full_idx);
                 let is_on_origin = in_moving_mode && selected && is_ghost;
                 let show_selected = selected && !in_moving_mode && is_active;
+
+                let connector_style = if show_selected {
+                    Style::default().fg(MAUVE).bg(SURFACE0)
+                } else {
+                    Style::default().fg(SURFACE0)
+                };
 
                 full_idx_to_visual.insert(full_idx, visual_idx);
                 visual_idx += 1;
@@ -120,7 +129,8 @@ fn draw_editor_feeds(f: &mut Frame, app: &App, area: Rect) {
                 // Inline rename input
                 if is_rename && selected && matches!(app.editor_mode, FeedEditorMode::Renaming { .. }) {
                     items.push(ListItem::new(Line::from(vec![
-                        Span::raw(indent),
+                        Span::styled(indent, Style::default().fg(SURFACE0)),
+                        Span::styled(connector, connector_style),
                         Span::styled("  ✎ ", Style::default().fg(GREEN)),
                         Span::styled(app.editor_input.clone(), Style::default().fg(TEXT)),
                         Span::styled("█", Style::default().fg(GREEN)),
@@ -145,7 +155,8 @@ fn draw_editor_feeds(f: &mut Frame, app: &App, area: Rect) {
                 };
 
                 items.push(ListItem::new(Line::from(vec![
-                    Span::raw(indent),
+                    Span::styled(indent, Style::default().fg(SURFACE0)),
+                    Span::styled(connector, connector_style),
                     drop_marker,
                     Span::styled(format!("{}{origin_hint}", feed.title), style),
                     Span::styled(feed.unread_badge(), Style::default().fg(YELLOW)),
@@ -156,20 +167,16 @@ fn draw_editor_feeds(f: &mut Frame, app: &App, area: Rect) {
 
     if !has_any_feed {
         f.render_widget(
-            Paragraph::new(" No feeds. Press [a] to add one.")
-                .style(Style::default().fg(SUBTEXT0)),
+            Paragraph::new(" No feeds. Press [a] to add one.").style(Style::default().fg(SUBTEXT0)),
             inner,
         );
         return;
     }
 
     let mut final_items = items;
-    let mut display_visual = full_idx_to_visual
-        .get(&app.editor_cursor)
-        .copied()
-        .unwrap_or(0);
+    let mut display_visual = full_idx_to_visual.get(&app.editor_cursor).copied().unwrap_or(0);
 
-    // In Moving mode: insert drop-preview row
+    // In Moving mode: insert drop-preview row after the cursor position.
     if let Some(origin) = moving_origin {
         let cursor = app.editor_cursor;
         if let Some(&origin_vis) = full_idx_to_visual.get(&origin)
@@ -179,14 +186,22 @@ fn draw_editor_feeds(f: &mut Frame, app: &App, area: Rect) {
             let preview = match tree.get(origin) {
                 Some(FeedTreeItem::Feed { feeds_idx, depth }) => {
                     let f = &app.feeds[*feeds_idx];
-                    let indent = "  ".repeat(*depth as usize);
-                    let arrow =
-                        Span::styled("➤ ", Style::default().fg(YELLOW).add_modifier(Modifier::BOLD));
-                    let name_style = Style::default().fg(YELLOW).add_modifier(Modifier::BOLD);
+                    let indent = tree_indent(&tree, origin, *depth);
+                    let connector = tree_connector(&tree, origin, *depth, rounded, "   ");
                     Some(ListItem::new(Line::from(vec![
-                        Span::raw(indent),
-                        arrow,
-                        Span::styled(f.title.clone(), name_style),
+                        Span::styled(indent, Style::default().fg(SURFACE0)),
+                        Span::styled(
+                            connector,
+                            Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            "➤ ",
+                            Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            f.title.clone(),
+                            Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
+                        ),
                         Span::styled(f.unread_badge(), Style::default().fg(YELLOW)),
                     ])))
                 }
@@ -201,9 +216,12 @@ fn draw_editor_feeds(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let mut state = ListState::default();
-    // Show selection when the Feeds panel is active, or when a feed move is in progress
-    // (to keep the ghost/preview visible even if the user tabs to categories mid-move).
-    let is_feed_moving = in_moving_mode && matches!(moving_origin.and_then(|o| tree.get(o)), Some(FeedTreeItem::Feed { .. }));
+    // Show selection when active, or during feed move (keeps ghost/preview visible when tabbed away).
+    let is_feed_moving = in_moving_mode
+        && matches!(
+            moving_origin.and_then(|o| tree.get(o)),
+            Some(FeedTreeItem::Feed { .. })
+        );
     if is_active || is_feed_moving {
         state.select(Some(display_visual));
     }
@@ -216,7 +234,7 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
     let is_rename = app.state == AppState::FeedEditorRename;
     let in_moving_mode = matches!(app.editor_mode, FeedEditorMode::Moving { .. });
 
-    // For cat-move ghost: find the category ID being moved
+    // For cat-move ghost: find the category ID being moved.
     let moving_cat_id: Option<u64> = if in_moving_mode {
         if let FeedEditorMode::Moving { origin_render_idx, .. } = &app.editor_mode {
             let items = visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed);
@@ -234,7 +252,9 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
     let mode_label = if is_active {
         match &app.editor_mode {
             FeedEditorMode::Normal => "",
-            FeedEditorMode::Moving { .. } => " MOVE — j/k navigate, ◀▶ depth, Space drop, Esc cancel ",
+            FeedEditorMode::Moving { .. } => {
+                " MOVE — j/k navigate, ◀▶ depth, Space drop, Esc cancel "
+            }
             FeedEditorMode::Renaming { .. } => " RENAME ",
             FeedEditorMode::NewCategory { .. } => " NEW CATEGORY ",
         }
@@ -266,17 +286,17 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     let cats = visible_cat_only_items(&app.categories, &app.feeds, &app.editor_collapsed);
+    let rounded = app.user_data.border_rounded;
 
     if cats.is_empty() {
         f.render_widget(
-            Paragraph::new(" No categories. [n] Create one.")
-                .style(Style::default().fg(SUBTEXT0)),
+            Paragraph::new(" No categories. [n] Create one.").style(Style::default().fg(SUBTEXT0)),
             inner,
         );
         return;
     }
 
-    // Find the rename target category (by matching full-tree index to category ID)
+    // Find rename target by matching full-tree index to category ID.
     let renamed_cat_id: Option<u64> = if is_rename {
         if let FeedEditorMode::Renaming { render_idx } = &app.editor_mode {
             let full = visible_tree_items(&app.categories, &app.feeds, &app.editor_collapsed);
@@ -300,52 +320,27 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
             let FeedTreeItem::Category { id, depth, collapsed } = item else {
                 return ListItem::new("");
             };
-            // In NewCategory mode the input row is active; in Moving mode the preview shows position.
-            // Neither should highlight the underlying category item.
-            let selected = is_active && app.editor_cat_cursor == idx && !in_new_cat_mode && !in_moving_mode;
+            let selected =
+                is_active && app.editor_cat_cursor == idx && !in_new_cat_mode && !in_moving_mode;
             let is_ghost = moving_cat_id == Some(*id);
             let color = CATEGORY_COLORS[(*id % CATEGORY_COLORS.len() as u64) as usize];
             let indent = tree_indent(&cats, idx, *depth);
-            let connector = if *depth > 0 {
-                let next_depth = cats
-                    .get(idx + 1)
-                    .map(|n| match n {
-                        FeedTreeItem::Feed { depth, .. }
-                        | FeedTreeItem::Category { depth, .. } => *depth,
-                    })
-                    .unwrap_or(0);
-                if next_depth < *depth {
-                    if app.user_data.border_rounded { "╰─ " } else { "└─ " }
-                } else {
-                    "├─ "
-                }
-            } else {
-                ""
-            };
+            let connector = tree_connector(&cats, idx, *depth, rounded, "");
             let icon = if *collapsed { "▶" } else { "▼" };
 
-            // Show rename input for the category being renamed
+            // Rename input row
             if renamed_cat_id == Some(*id) {
-                let rename_color = color;
                 return ListItem::new(Line::from(vec![
                     Span::styled(indent, Style::default().fg(SURFACE0)),
                     Span::styled(connector, Style::default().fg(SURFACE0)),
-                    Span::styled("  ✎ ", Style::default().fg(rename_color)),
+                    Span::styled("  ✎ ", Style::default().fg(color)),
                     Span::styled(app.editor_input.clone(), Style::default().fg(TEXT)),
-                    Span::styled("█", Style::default().fg(rename_color)),
+                    Span::styled("█", Style::default().fg(color)),
                 ]));
             }
 
-            let direct = app
-                .feeds
-                .iter()
-                .filter(|f| f.category_id == Some(*id))
-                .count();
-            let badge = if direct > 0 {
-                format!(" [{direct}]")
-            } else {
-                String::new()
-            };
+            let direct = app.feeds.iter().filter(|f| f.category_id == Some(*id)).count();
+            let badge = if direct > 0 { format!(" [{direct}]") } else { String::new() };
             let cat_name = app
                 .categories
                 .iter()
@@ -354,15 +349,16 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
                 .unwrap_or("?");
 
             let style = if is_ghost {
-                // Ghost: dimmed, source being moved
                 Style::default().fg(SUBTEXT0).add_modifier(Modifier::DIM)
             } else if selected {
-                Style::default()
-                    .fg(MANTLE)
-                    .bg(color)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(MANTLE).bg(color).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(color).add_modifier(Modifier::BOLD)
+            };
+            let connector_style = if selected && !is_ghost {
+                Style::default().fg(MANTLE).bg(color)
+            } else {
+                Style::default().fg(SURFACE0)
             };
             let badge_style = if selected && !is_ghost {
                 Style::default().fg(MANTLE).bg(color)
@@ -371,18 +367,17 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
             };
 
             ListItem::new(Line::from(vec![
-                Span::raw(indent),
+                Span::styled(indent, Style::default().fg(SURFACE0)),
+                Span::styled(connector, connector_style),
                 Span::styled(format!("{cat_name} {icon}"), style),
                 Span::styled(badge, badge_style),
             ]))
         })
         .collect();
 
-    // Insert new-category input row
+    // Insert new-category input row.
     let mut final_items = items;
-    if is_rename
-        && let FeedEditorMode::NewCategory { parent_id } = &app.editor_mode
-    {
+    if is_rename && let FeedEditorMode::NewCategory { parent_id } = &app.editor_mode {
         let parent_id = *parent_id;
         let depth = if let Some(pid) = parent_id {
             cats.iter()
@@ -399,7 +394,7 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
         final_items.insert(
             insert_at,
             ListItem::new(Line::from(vec![
-                Span::raw(indent),
+                Span::styled(indent, Style::default().fg(SURFACE0)),
                 Span::styled("  ✎ ", Style::default().fg(GREEN)),
                 Span::styled(app.editor_input.clone(), Style::default().fg(TEXT)),
                 Span::styled("█", Style::default().fg(GREEN)),
@@ -407,25 +402,14 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
         );
     }
 
-    // In Moving mode: insert drop-preview for category
-    let mut display_cursor = if is_active {
-        app.editor_cat_cursor
-    } else {
-        usize::MAX
-    };
+    // In Moving mode: insert drop-preview row for category.
+    let mut display_cursor = if is_active { app.editor_cat_cursor } else { usize::MAX };
     if in_moving_mode && moving_cat_id.is_some() && is_active {
         let cursor = app.editor_cat_cursor;
-        let at_virtual_root = cursor >= cats.len();
-        if !at_virtual_root {
+        if cursor < cats.len() {
             let src_name = moving_cat_id
-                .and_then(|id| {
-                    app.categories
-                        .iter()
-                        .find(|c| c.id == id)
-                        .map(|c| c.name.as_str())
-                })
+                .and_then(|id| app.categories.iter().find(|c| c.id == id).map(|c| c.name.as_str()))
                 .unwrap_or("?");
-            // depth_delta: 0 = sibling (same depth), +1 = child, -1 = shallower
             let depth_delta = match &app.editor_mode {
                 FeedEditorMode::Moving { depth_delta, .. } => *depth_delta,
                 _ => 0,
@@ -436,11 +420,9 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
             };
             let preview_depth = (cursor_depth + depth_delta).max(0) as u8;
             let indent = "  ".repeat(preview_depth as usize);
-            let arrow =
-                Span::styled("➤ ", Style::default().fg(YELLOW).add_modifier(Modifier::BOLD));
             let preview = ListItem::new(Line::from(vec![
-                Span::raw(indent),
-                arrow,
+                Span::styled(indent, Style::default().fg(SURFACE0)),
+                Span::styled("➤ ", Style::default().fg(YELLOW).add_modifier(Modifier::BOLD)),
                 Span::styled(
                     format!("{src_name} ▼"),
                     Style::default().fg(YELLOW).add_modifier(Modifier::BOLD),
@@ -454,9 +436,7 @@ fn draw_editor_categories(f: &mut Frame, app: &App, area: Rect) {
 
     let mut state = ListState::default();
     if is_active {
-        state.select(Some(
-            display_cursor.min(final_items.len().saturating_sub(1)),
-        ));
+        state.select(Some(display_cursor.min(final_items.len().saturating_sub(1))));
     }
     f.render_stateful_widget(List::new(final_items), inner, &mut state);
 }

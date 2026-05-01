@@ -70,6 +70,31 @@ pub(crate) fn tree_indent(tree: &[FeedTreeItem], render_idx: usize, depth: u8) -
     s
 }
 
+/// Compute the tree connector prefix (`├─ `, `╰─ `/`└─ `, or `root_str`) for an item.
+/// `root_str` is returned at depth 0 (e.g., `""` for categories, `"   "` for feeds).
+pub(crate) fn tree_connector(
+    tree: &[FeedTreeItem],
+    idx: usize,
+    depth: u8,
+    rounded: bool,
+    root_str: &'static str,
+) -> &'static str {
+    if depth == 0 {
+        return root_str;
+    }
+    let next_depth = tree
+        .get(idx + 1)
+        .map(|n| match n {
+            FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => *depth,
+        })
+        .unwrap_or(0);
+    if next_depth < depth {
+        if rounded { "╰─ " } else { "└─ " }
+    } else {
+        "├─ "
+    }
+}
+
 pub fn draw(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)

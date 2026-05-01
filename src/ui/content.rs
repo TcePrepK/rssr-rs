@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::{
-    border_set, editor::draw_feed_editor, tree_indent, BASE, BLUE, CATEGORY_COLORS, GREEN, MANTLE, MAUVE, RED,
-    SPINNER_FRAMES, SUBTEXT0, SURFACE0, TEXT, YELLOW,
+    border_set, editor::draw_feed_editor, tree_connector, tree_indent, BASE, BLUE, CATEGORY_COLORS,
+    GREEN, MANTLE, MAUVE, RED, SPINNER_FRAMES, SUBTEXT0, SURFACE0, TEXT, YELLOW,
 };
 
 fn format_age(secs: i64) -> String {
@@ -195,26 +195,7 @@ pub(super) fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect, is_favorite
                         .map(|c| c.name.as_str())
                         .unwrap_or("?");
                     let indent = tree_indent(&tree, render_idx, *depth);
-                    let connector = if *depth > 0 {
-                        let next_depth = tree
-                            .get(render_idx + 1)
-                            .map(|n| match n {
-                                FeedTreeItem::Feed { depth, .. }
-                                | FeedTreeItem::Category { depth, .. } => *depth,
-                            })
-                            .unwrap_or(0);
-                        if next_depth < *depth {
-                            if app.user_data.border_rounded {
-                                "╰─ "
-                            } else {
-                                "└─ "
-                            }
-                        } else {
-                            "├─ "
-                        }
-                    } else {
-                        ""
-                    };
+                    let connector = tree_connector(&tree, render_idx, *depth, app.user_data.border_rounded, "");
                     let style = if selected {
                         Style::default()
                             .fg(MANTLE)
@@ -238,27 +219,7 @@ pub(super) fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect, is_favorite
                 FeedTreeItem::Feed { feeds_idx, depth } => {
                     let feed = &app.feeds[*feeds_idx];
                     let indent = tree_indent(&tree, render_idx, *depth);
-                    // Tree connector: ╰─ for last child, ├─ for others; plain indent for depth 0.
-                    let connector = if *depth > 0 {
-                        let next_depth = tree
-                            .get(render_idx + 1)
-                            .map(|n| match n {
-                                FeedTreeItem::Feed { depth, .. }
-                                | FeedTreeItem::Category { depth, .. } => *depth,
-                            })
-                            .unwrap_or(0);
-                        if next_depth < *depth {
-                            if app.user_data.border_rounded {
-                                "╰─ "
-                            } else {
-                                "└─ "
-                            }
-                        } else {
-                            "├─ "
-                        }
-                    } else {
-                        "   "
-                    };
+                    let connector = tree_connector(&tree, render_idx, *depth, app.user_data.border_rounded, "   ");
                     let count_str = if is_favorites {
                         let n = app
                             .user_data
