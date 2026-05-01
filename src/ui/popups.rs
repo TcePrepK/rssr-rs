@@ -346,7 +346,7 @@ pub(super) fn draw_category_picker(f: &mut Frame, app: &App) {
         app.user_data.saved_articles.iter().any(|s| s.article.link == link)
     });
 
-    let height = (cats_len as u16 + if article_is_saved { 5 } else { 4 }).min(area.height.saturating_sub(4));
+    let height = (cats_len as u16 + if article_is_saved { 5 } else { 3 }).min(area.height.saturating_sub(4));
     let width = 40u16.min(area.width.saturating_sub(4));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
@@ -368,7 +368,7 @@ pub(super) fn draw_category_picker(f: &mut Frame, app: &App) {
     let mut lines: Vec<Line> = Vec::new();
 
     // fixed rows: "New category" + optional separator + "✕ Unsave"
-    let fixed_rows = if article_is_saved { 3u16 } else { 2u16 };
+    let fixed_rows = if article_is_saved { 3u16 } else { 1u16 };
     let visible_cats = inner.height.saturating_sub(fixed_rows) as usize;
     let scroll_top = if visible_cats == 0 || cats_len <= visible_cats {
         0usize
