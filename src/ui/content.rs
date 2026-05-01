@@ -101,14 +101,28 @@ fn split_articles(articles: &[Article]) -> (Vec<usize>, Vec<usize>, bool) {
 }
 
 /// Renders a three-panel layout: article list (left) and article detail (right).
+///
+/// A single shared footer bar is carved from the bottom of `right_area` and rendered
+/// after both panels, spanning the full combined width.
 fn draw_three_panel(f: &mut Frame, app: &mut App, right_area: Rect, is_preview: bool) {
+    // Carve shared footer from the bottom before splitting into panels.
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(2)])
+        .split(right_area);
+    let panels_area = rows[0];
+    let footer_area = rows[1];
+
     let panels = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
-        .split(right_area);
+        .split(panels_area);
 
-    draw_article_list(f, app, panels[0]);
-    draw_article_detail(f, app, panels[1], is_preview);
+    draw_article_list(f, app, panels[0], false);
+    draw_article_detail(f, app, panels[1], is_preview, false);
+
+    // Shared footer: article info when viewing detail, feed stats otherwise.
+    draw_article_footer(f, app, footer_area, !is_preview);
 }
 
 /// Renders the Feeds tab with sidebar (categories/feeds) and content area (list or detail).
@@ -133,7 +147,7 @@ pub(super) fn draw_feeds_tab(f: &mut Frame, app: &mut App, area: Rect) {
             if app.selected_sidebar_category.is_some() {
                 draw_category_article_list(f, app, cols[1]);
             } else {
-                draw_article_list(f, app, cols[1]);
+                draw_article_list(f, app, cols[1], true);
             }
         }
         AppState::ArticleList => {
@@ -160,7 +174,7 @@ pub(super) fn draw_saved_tab(f: &mut Frame, app: &mut App, area: Rect) {
     draw_saved_sidebar(f, app, cols[0]);
 
     match app.state {
-        AppState::SavedCategoryList => draw_article_list(f, app, cols[1]),
+        AppState::SavedCategoryList => draw_article_list(f, app, cols[1], true),
         AppState::ArticleList => {
             draw_three_panel(f, app, cols[1], true);
         }
@@ -171,7 +185,7 @@ pub(super) fn draw_saved_tab(f: &mut Frame, app: &mut App, area: Rect) {
             let is_preview = app.category_picker_return_state != AppState::ArticleDetail;
             draw_three_panel(f, app, cols[1], is_preview);
         }
-        _ => draw_article_list(f, app, cols[1]),
+        _ => draw_article_list(f, app, cols[1], true),
     }
 }
 
@@ -500,13 +514,19 @@ fn draw_category_article_list(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 /// Renders the article list for the currently selected feed or category.
-pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
-    let content_footer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(2)])
-        .split(area);
-    let area = content_footer[0];
-    let footer_area = content_footer[1];
+///
+/// When `show_footer` is `false` (called from three-panel mode), the per-panel footer is
+/// suppressed; `draw_three_panel` renders a single shared footer instead.
+pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect, show_footer: bool) {
+    let (area, footer_area) = if show_footer {
+        let cf = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(2)])
+            .split(area);
+        (cf[0], cf[1])
+    } else {
+        (area, Rect::default())
+    };
 
     // ── Category context: flat date-sorted list from all feeds in selected category ──
     if app.in_category_context {
@@ -536,7 +556,9 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
                     .style(Style::default().fg(SUBTEXT0)),
                 inner,
             );
-            draw_article_footer(f, app, footer_area, false);
+            if show_footer {
+                draw_article_footer(f, app, footer_area, false);
+            }
             return;
         }
 
@@ -597,7 +619,9 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
                 &mut sb_state,
             );
         }
-        draw_article_footer(f, app, footer_area, false);
+        if show_footer {
+            draw_article_footer(f, app, footer_area, false);
+        }
         return;
     }
 
@@ -619,7 +643,9 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
                 .style(Style::default().fg(SUBTEXT0)),
             inner,
         );
-        draw_article_footer(f, app, footer_area, false);
+        if show_footer {
+            draw_article_footer(f, app, footer_area, false);
+        }
         return;
     }
 
@@ -673,7 +699,9 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
                 Paragraph::new(vec![text]).wrap(Wrap { trim: false }),
                 list_area,
             );
-            draw_article_footer(f, app, footer_area, false);
+            if show_footer {
+                draw_article_footer(f, app, footer_area, false);
+            }
             return;
         }
         f.render_widget(
@@ -681,7 +709,9 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
                 .style(Style::default().fg(SUBTEXT0)),
             list_area,
         );
-        draw_article_footer(f, app, footer_area, false);
+        if show_footer {
+            draw_article_footer(f, app, footer_area, false);
+        }
         return;
     }
 
@@ -708,17 +738,37 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
             Style::default().fg(TEXT)
         };
 
+        // Compute short age string (e.g. " 42m", " 2h", " 3d") for display next to title.
+        let age_str: Option<String> = article.published_secs.map(|secs| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(secs);
+            let diff = (now - secs).max(0) as u64;
+            if diff < 60 {
+                " now".to_string()
+            } else if diff < 3600 {
+                format!(" {}m", diff / 60)
+            } else if diff < 86400 {
+                format!(" {}h", diff / 3600)
+            } else {
+                format!(" {}d", diff / 86400)
+            }
+        });
+        let age_width = age_str.as_ref().map(|s| s.chars().count()).unwrap_or(0);
+
         // Build title with warning icon if no timestamp
         let mut title_spans = Vec::new();
         if article.published_secs.is_none() {
             title_spans.push(Span::styled("⚠ ", Style::default().fg(YELLOW)));
         }
         let title_available = (list_area.width as usize).saturating_sub(
-            2 + if article.published_secs.is_none() {
-                2
-            } else {
-                0
-            },
+            2 + age_width
+                + if article.published_secs.is_none() {
+                    2
+                } else {
+                    0
+                },
         );
         let displayed_title = if is_selected {
             let elapsed = app.tick.saturating_sub(app.article_title_start_tick);
@@ -727,6 +777,14 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
             article.title.clone()
         };
         title_spans.push(Span::raw(displayed_title));
+        if let Some(ref age) = age_str {
+            title_spans.push(Span::styled(
+                age.clone(),
+                Style::default()
+                    .fg(age_color(article.published_secs.unwrap()))
+                    .add_modifier(Modifier::DIM),
+            ));
+        }
 
         items.push(
             ListItem::new(Line::from(
@@ -765,17 +823,37 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
             Style::default().fg(TEXT)
         };
 
+        // Compute short age string for display next to title.
+        let age_str: Option<String> = article.published_secs.map(|secs| {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(secs);
+            let diff = (now - secs).max(0) as u64;
+            if diff < 60 {
+                " now".to_string()
+            } else if diff < 3600 {
+                format!(" {}m", diff / 60)
+            } else if diff < 86400 {
+                format!(" {}h", diff / 3600)
+            } else {
+                format!(" {}d", diff / 86400)
+            }
+        });
+        let age_width = age_str.as_ref().map(|s| s.chars().count()).unwrap_or(0);
+
         // Build title with warning icon if no timestamp
         let mut title_spans = Vec::new();
         if article.published_secs.is_none() {
             title_spans.push(Span::styled("⚠ ", Style::default().fg(YELLOW)));
         }
         let title_available = (list_area.width as usize).saturating_sub(
-            2 + if article.published_secs.is_none() {
-                2
-            } else {
-                0
-            },
+            2 + age_width
+                + if article.published_secs.is_none() {
+                    2
+                } else {
+                    0
+                },
         );
         let displayed_title = if is_selected {
             let elapsed = app.tick.saturating_sub(app.article_title_start_tick);
@@ -784,6 +862,14 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
             article.title.clone()
         };
         title_spans.push(Span::raw(displayed_title));
+        if let Some(ref age) = age_str {
+            title_spans.push(Span::styled(
+                age.clone(),
+                Style::default()
+                    .fg(age_color(article.published_secs.unwrap()))
+                    .add_modifier(Modifier::DIM),
+            ));
+        }
 
         items.push(
             ListItem::new(Line::from(
@@ -841,7 +927,9 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
         );
     }
 
-    draw_article_footer(f, app, footer_area, false);
+    if show_footer {
+        draw_article_footer(f, app, footer_area, false);
+    }
 }
 
 /// Unified footer renderer used by both `draw_article_list` and `draw_article_detail`.
@@ -1016,7 +1104,16 @@ fn draw_article_footer(f: &mut Frame, app: &App, area: Rect, is_article_view: bo
 }
 
 /// Renders the article detail view with markdown content, scrolling, and article metadata footer.
-pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect, is_preview: bool) {
+///
+/// When `show_footer` is `false` (called from three-panel mode), the per-panel footer is
+/// suppressed; `draw_three_panel` renders a single shared footer instead.
+pub(super) fn draw_article_detail(
+    f: &mut Frame,
+    app: &mut App,
+    area: Rect,
+    is_preview: bool,
+    show_footer: bool,
+) {
     let article = if app.in_category_context {
         app.category_view_articles
             .get(app.selected_article)
@@ -1050,11 +1147,30 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect, is_p
     let feed_refreshing = !app.in_saved_context
         && !app.in_category_context
         && app.feeds.get(app.selected_feed).is_some_and(|f| !f.fetched);
+    let age_suffix: String = if let Some(secs) = article.published_secs {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(secs);
+        let diff = (now - secs).max(0) as u64;
+        let age = if diff < 60 {
+            "now".to_string()
+        } else if diff < 3600 {
+            format!("{}m", diff / 60)
+        } else if diff < 86400 {
+            format!("{}h", diff / 3600)
+        } else {
+            format!("{}d", diff / 86400)
+        };
+        format!("  • {age}")
+    } else {
+        String::new()
+    };
     let detail_title = if feed_refreshing || app.article_fetching {
         let spinner = SPINNER_FRAMES[app.tick % SPINNER_FRAMES.len()];
-        format!(" {spinner} {} ", article.title)
+        format!(" {spinner} {}{age_suffix} ", article.title)
     } else {
-        format!(" {} ", article.title)
+        format!(" {}{age_suffix} ", article.title)
     };
     let block = Block::default()
         .border_set(border_set(app.user_data.border_rounded))
@@ -1069,13 +1185,15 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect, is_p
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(2)])
-        .split(inner_area);
-
-    let content_area = layout[0];
-    let bar_area = layout[1];
+    let (content_area, bar_area) = if show_footer {
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(2)])
+            .split(inner_area);
+        (layout[0], layout[1])
+    } else {
+        (inner_area, Rect::default())
+    };
 
     // Convert images to inline text (![alt](url) → 🖼 alt), then strip hyperlinks.
     let no_images = regex::Regex::new(r"!\[([^\]]*)\]\([^\)]+\)")
@@ -1115,7 +1233,9 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect, is_p
         app.content_line_count = line_count;
     }
 
-    draw_article_footer(f, app, bar_area, true);
+    if show_footer {
+        draw_article_footer(f, app, bar_area, true);
+    }
 
     let has_scrollbar = line_count > content_area.height as usize;
     let para_render_area = if has_scrollbar {
