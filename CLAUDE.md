@@ -9,6 +9,7 @@
 - Add, rename, or restructure a module or directory
 - Change a module's sole responsibility
 - Add a new persisted type or data file
+- Add or change a script in `scripts/`
 - Change the testing workflow
 - Establish a new non-negotiable rule
 - **Change the task workflow**
@@ -28,7 +29,7 @@ rule), fix it in the same commit.
 4. **On completion**: remove the item from TASKS.md and append it to `changelog/next-update.md`. The file uses
    grouped sections (`## Features`, `## UI`, `## Fixes`, `## Refactor`). Each entry must include today's date:
    `- YYYY-MM-DD: Description`. Append new entries below older ones within each section. Never commit without
-   doing this first. Never read the `changelog/` files — they are an append-only archive.
+   doing this first.
 
 **Blocked entry format** (required fields):
 
@@ -238,3 +239,63 @@ or after any significant changes. The tool skips unchanged files, so it's fast.
 
 Run `rust-ast-extractor dir src/` for a live index of all source files and their responsibilities.
 Each file's `//!` module doc is the authoritative description — it is never out of date.
+
+---
+
+## Release Workflow
+
+Use this when the user asks to cut a release, bump the version, or publish a new version.
+
+### Invoke the release agent
+
+```bash
+# Explicit version
+python scripts/release_agent.py --version X.Y.Z
+
+# Bump component (patch: z+1, minor: y+1 reset z, major: x+1 reset y.z)
+python scripts/release_agent.py --bump patch
+python scripts/release_agent.py --bump minor
+python scripts/release_agent.py --bump major
+
+# Auto-detect: non-empty Features section → minor, else patch
+python scripts/release_agent.py --bump auto
+
+# Preview without modifying files
+python scripts/release_agent.py --bump auto --dry-run
+```
+
+The script does everything in one pass:
+
+1. Reads `Cargo.toml` for the current version
+2. Reads `changelog/next-update.md`
+3. Calls ollama `gemma4:e4b` to produce a 3–5 bullet human-readable summary
+   (falls back to a rule-based summary if ollama is unavailable)
+4. Bumps the version in `Cargo.toml`
+5. Renames `changelog/next-update.md` → `changelog/vX.Y.Z.md`
+6. Creates a fresh `changelog/next-update.md` template
+7. Appends an entry to `changelog.json`
+
+### After the script succeeds
+
+1. Run the full [Test Workflow](#test-workflow) — the script does not run tests.
+2. Invoke commit-crafter to commit: `Cargo.toml`, `changelog.json`
+   (`changelog/` is gitignored — no need to stage those files.)
+
+### `changelog.json` format
+
+```json
+[
+    {
+        "version": "X.Y.Z",
+        "date": "YYYY-MM-DD",
+        "summary": "One-sentence overview of the release.",
+        "highlights": [
+            "Feature or improvement A",
+            "Feature or improvement B",
+            "Minor bug fixes and UI improvements"
+        ]
+    }
+]
+```
+
+Entries are ordered oldest → newest (append only). Never edit existing entries.
