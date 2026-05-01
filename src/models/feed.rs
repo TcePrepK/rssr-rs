@@ -18,7 +18,4 @@ impl Article {
         if self.is_read { "○ " } else { "● " }
     }
 
-    pub fn star_icon(&self) -> &'static str {
-        if self.is_saved { "★ " } else { "" }
-    }
 }
