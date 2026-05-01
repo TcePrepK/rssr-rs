@@ -15,7 +15,7 @@ pub(super) async fn handle_article(
 ) -> bool {
     match key.code {
         KeyCode::Char('q') => return true,
-        KeyCode::Char('r') if !app.in_saved_context => {
+        KeyCode::Char('r') if !app.in_saved_context && !app.in_category_context => {
             let idx = app.selected_feed;
             if let Some(feed) = app.feeds.get_mut(idx) {
                 let url = feed.url.clone();
@@ -226,7 +226,13 @@ fn unsave_article(app: &mut App) {
 }
 
 fn update_is_saved_flag(app: &mut App, is_saved: bool) {
-    if app.in_saved_context {
+    if app.in_category_context {
+        if let Some(&(fi, ai)) = app.category_view_articles.get(app.selected_article)
+            && let Some(art) = app.feeds.get_mut(fi).and_then(|f| f.articles.get_mut(ai))
+        {
+            art.is_saved = is_saved;
+        }
+    } else if app.in_saved_context {
         if let Some(art) = app.saved_view_articles.get_mut(app.selected_article) {
             art.is_saved = is_saved;
             let link = art.link.clone();
@@ -250,21 +256,32 @@ fn prefetch_article_if_stub(app: &mut App, tx: &UnboundedSender<AppEvent>) {
     if app.in_saved_context {
         return;
     }
-    let article = match get_selected_article(app) {
+    let (feed_idx, art_idx) = if app.in_category_context {
+        match app.category_view_articles.get(app.selected_article).copied() {
+            Some(pair) => pair,
+            None => return,
+        }
+    } else {
+        (app.selected_feed, app.selected_article)
+    };
+
+    let article = match app.feeds.get(feed_idx).and_then(|f| f.articles.get(art_idx)) {
         Some(a) => a,
         None => return,
     };
     if article.content.len() >= CONTENT_STUB_MAX_LEN {
         return;
     }
-    let tx2 = tx.clone();
     let url = article.link.clone();
-    let art_idx = app.selected_article;
-    let feed_idx = app.selected_feed;
     app.article_fetching = true;
+    let tx2 = tx.clone();
     tokio::spawn(async move {
         let result = fetch_readable_content(&url).await;
-        let _ = tx2.send(AppEvent::FullArticleFetched(FeedSource::Feed(feed_idx), art_idx, result));
+        let _ = tx2.send(AppEvent::FullArticleFetched(
+            FeedSource::Feed(feed_idx),
+            art_idx,
+            result,
+        ));
     });
 }
 
@@ -277,7 +294,10 @@ fn open_article(app: &mut App, tx: &UnboundedSender<AppEvent>) {
 }
 
 pub(super) fn get_selected_article(app: &App) -> Option<Article> {
-    if app.in_saved_context {
+    if app.in_category_context {
+        let &(fi, ai) = app.category_view_articles.get(app.selected_article)?;
+        app.feeds.get(fi)?.articles.get(ai).cloned()
+    } else if app.in_saved_context {
         app.saved_view_articles.get(app.selected_article).cloned()
     } else {
         app.feeds
@@ -294,10 +314,30 @@ fn mark_article_as_read(app: &mut App, article: &Article) {
     app.user_data.read_links.insert(article.link.clone());
     let _ = save_user_data(&app.user_data);
 
-    if app.in_saved_context {
+    if app.in_category_context {
+        mark_category_article_as_read(app, article);
+    } else if app.in_saved_context {
         mark_saved_as_read(app, article);
     } else {
         mark_regular_article_as_read(app);
+    }
+}
+
+fn mark_category_article_as_read(app: &mut App, article: &Article) {
+    // Find and update the article in its source feed by link.
+    for feed in app.feeds.iter_mut() {
+        if let Some(a) = feed.articles.iter_mut().find(|a| a.link == article.link) {
+            a.is_read = true;
+        }
+        feed.unread_count = feed.articles.iter().filter(|a| !a.is_read).count();
+    }
+    if let Some(s) = app
+        .user_data
+        .saved_articles
+        .iter_mut()
+        .find(|s| s.article.link == article.link)
+    {
+        s.article.is_read = true;
     }
 }
 
@@ -348,12 +388,25 @@ fn fetch_full_article_if_stub(app: &mut App, tx: &UnboundedSender<AppEvent>, art
 
     let tx2 = tx.clone();
     let url = article.link.clone();
-    let source = if app.in_saved_context {
+    let source = if app.in_category_context {
+        let (fi, _ai) = app.category_view_articles
+            .get(app.selected_article)
+            .copied()
+            .unwrap_or((app.selected_feed, app.selected_article));
+        FeedSource::Feed(fi)
+    } else if app.in_saved_context {
         FeedSource::Saved
     } else {
         FeedSource::Feed(app.selected_feed)
     };
-    let art_idx = app.selected_article;
+    let art_idx = if app.in_category_context {
+        app.category_view_articles
+            .get(app.selected_article)
+            .map(|&(_, ai)| ai)
+            .unwrap_or(app.selected_article)
+    } else {
+        app.selected_article
+    };
     app.article_fetching = true;
     tokio::spawn(async move {
         let result = fetch_readable_content(&url).await;
@@ -362,7 +415,14 @@ fn fetch_full_article_if_stub(app: &mut App, tx: &UnboundedSender<AppEvent>, art
 }
 
 fn update_article_content(app: &mut App, content: String) {
-    if app.in_saved_context {
+    if app.in_category_context {
+        if let Some(&(fi, ai)) = app.category_view_articles.get(app.selected_article)
+            && let Some(feed) = app.feeds.get_mut(fi)
+            && let Some(a) = feed.articles.get_mut(ai)
+        {
+            a.content = content;
+        }
+    } else if app.in_saved_context {
         if let Some(a) = app.saved_view_articles.get_mut(app.selected_article) {
             a.content = content;
         }
@@ -374,7 +434,9 @@ fn update_article_content(app: &mut App, content: String) {
 }
 
 fn toggle_read(app: &mut App) {
-    let update = if app.in_saved_context {
+    let update = if app.in_category_context {
+        toggle_read_category(app)
+    } else if app.in_saved_context {
         toggle_read_saved(app)
     } else {
         toggle_read_regular(app)
@@ -388,6 +450,24 @@ fn toggle_read(app: &mut App) {
         }
         let _ = save_user_data(&app.user_data);
     }
+}
+
+fn toggle_read_category(app: &mut App) -> Option<(String, bool)> {
+    let &(fi, ai) = app.category_view_articles.get(app.selected_article)?;
+    let art = app.feeds.get_mut(fi)?.articles.get_mut(ai)?;
+    art.is_read = !art.is_read;
+    let link = art.link.clone();
+    let is_read = art.is_read;
+    app.feeds[fi].unread_count = app.feeds[fi].articles.iter().filter(|a| !a.is_read).count();
+    if let Some(s) = app
+        .user_data
+        .saved_articles
+        .iter_mut()
+        .find(|s| s.article.link == link)
+    {
+        s.article.is_read = is_read;
+    }
+    Some((link, is_read))
 }
 
 fn toggle_read_saved(app: &mut App) -> Option<(String, bool)> {
