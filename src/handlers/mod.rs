@@ -25,9 +25,14 @@ pub async fn handle_key(app: &mut App, key: KeyEvent, tx: &UnboundedSender<AppEv
             return article::handle_article(app, key, tx).await;
         }
         AppState::FeedList => return feed_list::handle_feed_list(app, key, tx),
-        AppState::FavoriteFeedList => return feed_list::handle_favorite_feed_list(app, key),
+        AppState::SavedCategoryList => return feed_list::handle_saved_feed_list(app, key),
         AppState::FeedEditor | AppState::FeedEditorRename => {
             feed_editor::handle_feed_editor(app, key, tx)
+        }
+        AppState::CategoryPicker => article::handle_category_picker(app, key),
+        AppState::SavedCategoryEditor => settings::handle_saved_category_editor(app, key),
+        AppState::SavedCategoryEditorRename => {
+            settings::handle_saved_category_editor_rename(app, key)
         }
     }
     false
