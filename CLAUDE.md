@@ -150,9 +150,11 @@ On session start, pick **multiple tasks** when sensible — not just one. Batch 
 
 ## AST Cache (rust-ast-extractor)
 
-The project is indexed with [`rust-ast-extractor`](../rust-ast-extractor). The cache lives in `.ast-cache/` (gitignored).
+The project is indexed with [`rust-ast-extractor`](https://github.com/TcePrepK/rust-ast-extractor). The cache lives in
+`.ast-cache/` (gitignored).
 
-**Before reading a source file**, check the cache first — it's faster and gives you signatures, docs, and line numbers without opening the file:
+**Before reading a source file**, check the cache first — it's faster and gives you signatures, docs, and line numbers
+without opening the file:
 
 ```bash
 # Get structured summary of a file (items, signatures, docs)
@@ -167,11 +169,13 @@ rust-ast-extractor index src/
 ```
 
 **When to use it:**
+
 - Before asking "what does X function do?" — `get src/file.rs::fn_name` gives you the source instantly
 - When planning which files to touch — `get src/file.rs` shows all items with signatures and doc comments
 - After making changes — re-index so the cache stays current
 
-**Re-index rule:** Run `rust-ast-extractor index src/` at the start of any session where you plan to edit source files, or after any significant changes. The tool skips unchanged files, so it's fast.
+**Re-index rule:** Run `rust-ast-extractor index src/` at the start of any session where you plan to edit source files,
+or after any significant changes. The tool skips unchanged files, so it's fast.
 
 ---
 
