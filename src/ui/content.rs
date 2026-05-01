@@ -300,7 +300,7 @@ pub(super) fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect, is_favorite
     } else {
         &mut app.sidebar_list_state
     };
-    list_state.select(if is_navigating { Some(cursor) } else { None });
+    list_state.select(Some(cursor));
     f.render_stateful_widget(List::new(items), list_area, list_state);
 
     if let Some(pb) = maybe_progress {

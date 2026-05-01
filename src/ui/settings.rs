@@ -166,7 +166,7 @@ fn draw_settings(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .border_set(border_set(app.user_data.border_rounded))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(SURFACE0))
+        .border_style(Style::default().fg(if app.state == AppState::SettingsList { MAUVE } else { SURFACE0 }))
         .bg(BASE)
         .title(Span::styled(
             " Settings ",
