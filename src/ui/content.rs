@@ -14,8 +14,8 @@ use crate::{
 };
 
 use super::{
-    border_set, editor::draw_feed_editor, BASE, BLUE, CATEGORY_COLORS, GREEN, MANTLE, MAUVE, RED, SPINNER_FRAMES,
-    SUBTEXT0, SURFACE0, TEXT, YELLOW,
+    border_set, editor::draw_feed_editor, tree_indent, BASE, BLUE, CATEGORY_COLORS, GREEN, MANTLE, MAUVE, RED,
+    SPINNER_FRAMES, SUBTEXT0, SURFACE0, TEXT, YELLOW,
 };
 
 fn format_age(secs: i64) -> String {
@@ -35,35 +35,15 @@ fn format_age(secs: i64) -> String {
     }
 }
 
-/// Compute the leading indent string for a tree item at `depth` positioned at `render_idx`.
-/// For each ancestor level (1 to depth-1), emits "│  " if that level still has siblings
-/// after the current item, or "   " if it was the last child.
-fn tree_indent(tree: &[FeedTreeItem], render_idx: usize, depth: u8) -> String {
-    if depth <= 1 {
-        return String::new();
+/// Truncate `text` to `max` chars, appending `…` if truncated.
+fn truncate_title(text: &str, max: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= max || max == 0 {
+        text.to_string()
+    } else {
+        let end = max.saturating_sub(1);
+        chars[..end].iter().collect::<String>() + "…"
     }
-    let mut s = String::new();
-    for level in 1..depth {
-        let next_at_level = tree[render_idx + 1..]
-            .iter()
-            .find(|n| {
-                let d = match n {
-                    FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => {
-                        *depth
-                    }
-                };
-                d <= level
-            })
-            .map(|n| match n {
-                FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => *depth,
-            });
-        if next_at_level == Some(level) {
-            s.push_str("│  ");
-        } else {
-            s.push_str("   ");
-        }
-    }
-    s
 }
 
 /// Scroll `text` to fit within `available` chars, using `elapsed` ticks.
@@ -318,7 +298,7 @@ pub(super) fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect, is_favorite
                         let elapsed = app.tick.saturating_sub(app.sidebar_title_start_tick);
                         scroll_title(&feed.title, title_available, elapsed)
                     } else {
-                        feed.title.clone()
+                        truncate_title(&feed.title, title_available)
                     };
                     let mut spans = vec![
                         Span::styled(indent, Style::default().fg(SURFACE0)),
