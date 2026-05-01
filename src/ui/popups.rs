@@ -577,3 +577,60 @@ pub(super) fn draw_confirm_delete_saved_cat(f: &mut Frame, app: &App) {
     ];
     f.render_widget(ratatui::widgets::Paragraph::new(text).block(block), center);
 }
+
+/// Renders the update-available popup when a newer version has been found on crates.io.
+pub(super) fn draw_update_popup(f: &mut Frame, app: &App) {
+    let Some(ref version) = app.update_available else {
+        return;
+    };
+    let area = f.area();
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(38),
+            Constraint::Length(7),
+            Constraint::Percentage(38),
+        ])
+        .split(area);
+    let center = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(15),
+            Constraint::Percentage(70),
+            Constraint::Percentage(15),
+        ])
+        .split(vertical[1])[1];
+
+    f.render_widget(Clear, center);
+    let block = Block::default()
+        .border_set(border_set(app.user_data.border_rounded))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(MAUVE))
+        .bg(BASE)
+        .title(Span::styled(
+            "  Update Available ",
+            Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
+        ));
+    let current = env!("CARGO_PKG_VERSION");
+    let text = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(format!("v{current}"), Style::default().fg(SUBTEXT0)),
+            Span::styled("  →  ", Style::default().fg(SUBTEXT0)),
+            Span::styled(
+                format!("v{version}"),
+                Style::default().fg(GREEN).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "  [Any key] ",
+                Style::default().fg(MAUVE).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("Dismiss", Style::default().fg(TEXT)),
+        ]),
+    ];
+    f.render_widget(Paragraph::new(text).block(block), center);
+}

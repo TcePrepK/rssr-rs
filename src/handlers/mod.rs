@@ -18,6 +18,10 @@ use crate::{
 
 /// Route a key event to the correct handler based on the current app state.
 pub async fn handle_key(app: &mut App, key: KeyEvent, tx: &UnboundedSender<AppEvent>) -> bool {
+    if app.update_available.is_some() {
+        app.update_available = None;
+        return false;
+    }
     match app.state {
         AppState::AddFeed => settings::handle_add_feed(app, key, tx),
         AppState::SettingsList => return settings::handle_settings(app, key),

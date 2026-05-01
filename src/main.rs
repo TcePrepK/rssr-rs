@@ -60,6 +60,16 @@ async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()
         }
     });
 
+    // Check crates.io for a newer version in the background.
+    {
+        let tx_ver = tx.clone();
+        tokio::spawn(async move {
+            if let Some(version) = fetch::check_latest_version().await {
+                let _ = tx_ver.send(AppEvent::UpdateAvailable(version));
+            }
+        });
+    }
+
     // Load cached articles and apply to feeds before first fetch
     let cached = storage::load_articles();
     for feed in &mut app.feeds {
@@ -217,6 +227,10 @@ async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()
                 if app.state == AppState::AddFeed && app.add_feed_step == AddFeedStep::Title {
                     app.add_feed_fetched_title = Some(result.unwrap_or_default());
                 }
+            }
+
+            AppEvent::UpdateAvailable(version) => {
+                app.update_available = Some(version);
             }
         }
     }

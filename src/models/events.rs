@@ -15,4 +15,6 @@ pub enum AppEvent {
     FullArticleFetched(FeedSource, usize, Result<String, String>),
     /// Result of background feed-title fetch during the AddFeed flow.
     FeedTitleFetched(Result<String, String>),
+    /// A newer version of brochure is available on crates.io.
+    UpdateAvailable(String),
 }

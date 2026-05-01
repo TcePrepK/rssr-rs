@@ -188,4 +188,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if app.state == AppState::CategoryPicker {
         popups::draw_category_picker(f, app);
     }
+    if app.update_available.is_some() {
+        popups::draw_update_popup(f, app);
+    }
 }

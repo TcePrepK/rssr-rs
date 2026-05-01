@@ -131,3 +131,26 @@ pub async fn fetch_readable_content(url: &str) -> Result<String, String> {
         .map(|product| product.content)
         .map_err(|e| format!("Readability error: {e}"))
 }
+
+/// Fetch the latest published version of brochure from crates.io.
+/// Returns `Some(version)` if a newer version exists, `None` if already up to date or on error.
+pub async fn check_latest_version() -> Option<String> {
+    let resp = http_client()
+        .get("https://crates.io/api/v1/crates/brochure")
+        .header(
+            "User-Agent",
+            concat!("brochure/", env!("CARGO_PKG_VERSION"), " (version-check)"),
+        )
+        .send()
+        .await
+        .ok()?;
+    let text = resp.text().await.ok()?;
+    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let latest = json["crate"]["newest_version"].as_str()?.to_string();
+    let current = env!("CARGO_PKG_VERSION");
+    if latest != current {
+        Some(latest)
+    } else {
+        None
+    }
+}
