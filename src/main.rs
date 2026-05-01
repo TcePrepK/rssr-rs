@@ -231,6 +231,29 @@ fn on_feed_fetched(
                 }
             }
 
+            // Preserve saved articles that were dropped by this refresh.
+            {
+                let feed_title = &feed.title;
+                let new_links: std::collections::HashSet<&str> =
+                    articles.iter().map(|a| a.link.as_str()).collect();
+                let missing_saved: Vec<crate::models::Article> = app
+                    .user_data
+                    .saved_articles
+                    .iter()
+                    .filter(|s| {
+                        &s.article.source_feed == feed_title
+                            && !new_links.contains(s.article.link.as_str())
+                    })
+                    .map(|s| {
+                        let mut art = s.article.clone();
+                        art.is_read = app.user_data.read_links.contains(&art.link);
+                        art.is_saved = true;
+                        art
+                    })
+                    .collect();
+                articles.extend(missing_saved);
+            }
+
             feed.unread_count = articles.iter().filter(|a| !a.is_read).count();
             feed.articles = articles;
             feed.fetch_error = None;
