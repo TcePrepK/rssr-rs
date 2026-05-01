@@ -2,9 +2,9 @@ use crossterm::event::{KeyCode, KeyEvent};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-    app::App,
+    app::{visible_tree_items, App},
     fetch::fetch_feed,
-    models::{AppEvent, AppState, FeedEditorMode},
+    models::{AppEvent, AppState, FeedEditorMode, FeedTreeItem},
 };
 
 pub(super) fn handle_feed_list(
@@ -60,6 +60,30 @@ pub(super) fn handle_feed_list(
             app.editor_collapsed = app.sidebar_collapsed.clone();
             app.editor_mode = FeedEditorMode::Normal;
             app.state = AppState::FeedEditor;
+        }
+        KeyCode::Char('g') => {
+            // Jump to top of feed list
+            app.sidebar_cursor = 0;
+            app.sidebar_title_start_tick = app.tick;
+
+            let items = visible_tree_items(&app.categories, &app.feeds, &app.sidebar_collapsed);
+            if let Some(FeedTreeItem::Feed { feeds_idx, .. }) = items.first() {
+                app.selected_feed = *feeds_idx;
+            }
+        }
+        KeyCode::Char('C') => {
+            // Collapse all categories
+            for category in &app.categories {
+                app.sidebar_collapsed.insert(category.id);
+            }
+
+            app.sidebar_cursor = 0;
+            app.sidebar_title_start_tick = app.tick;
+
+            let items = visible_tree_items(&app.categories, &app.feeds, &app.sidebar_collapsed);
+            if let Some(FeedTreeItem::Feed { feeds_idx, .. }) = items.first() {
+                app.selected_feed = *feeds_idx;
+            }
         }
         _ => {}
     }
