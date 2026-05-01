@@ -81,6 +81,7 @@ fn draw_settings(f: &mut Frame, app: &App, area: Rect) {
     let save = app.user_data.save_article_content;
     let eager = app.user_data.eager_article_fetch;
     let rounded = app.user_data.border_rounded;
+    let scroll_loop = app.user_data.scroll_loop;
     let cache_label = format_cache_size(app.article_cache_size);
     let rows = [
         Row::SectionHeader {
@@ -144,6 +145,12 @@ fn draw_settings(f: &mut Frame, app: &App, area: Rect) {
         Row::SectionHeader {
             label: " Appearance",
             is_last: true,
+        },
+        Row::Toggle {
+            item: SettingsItem::ScrollLoop,
+            label: "[ Scroll Loop ]",
+            in_last: true,
+            on: scroll_loop,
         },
         Row::Toggle {
             item: SettingsItem::BorderStyle,

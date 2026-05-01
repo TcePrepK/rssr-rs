@@ -82,6 +82,16 @@ pub(super) fn handle_settings(app: &mut App, key: KeyEvent) -> bool {
                     app.user_data.archive_policy.label()
                 ));
             }
+            SettingsItem::ScrollLoop => {
+                app.user_data.scroll_loop = !app.user_data.scroll_loop;
+                let _ = save_user_data(&app.user_data);
+                let state = if app.user_data.scroll_loop {
+                    "ON"
+                } else {
+                    "OFF"
+                };
+                app.set_status(format!("Scroll Loop: {state}"));
+            }
             SettingsItem::BorderStyle => {
                 app.user_data.border_rounded = !app.user_data.border_rounded;
                 let _ = save_user_data(&app.user_data);

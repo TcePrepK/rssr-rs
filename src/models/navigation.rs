@@ -88,6 +88,8 @@ pub enum SettingsItem {
     AutoFetchOnStart,
     /// Cycle archive policy for how long archived articles are kept.
     ArchivePolicy,
+    /// Toggle whether list navigation wraps around at the top/bottom.
+    ScrollLoop,
     /// Toggle rounded UI borders.
     BorderStyle,
 }
@@ -104,14 +106,15 @@ impl SettingsItem {
             Self::EagerArticleFetch => Self::AutoFetchOnStart,
             Self::AutoFetchOnStart => Self::ArchivePolicy,
             Self::ArchivePolicy => Self::BorderStyle,
-            Self::BorderStyle => Self::ImportOpml,
+            Self::BorderStyle => Self::ScrollLoop,
+            Self::ScrollLoop => Self::ImportOpml,
         }
     }
 
     /// Move to the previous settings item (wraps around).
     pub fn prev(self) -> Self {
         match self {
-            Self::ImportOpml => Self::BorderStyle,
+            Self::ImportOpml => Self::ScrollLoop,
             Self::ExportOpml => Self::ImportOpml,
             Self::ClearData => Self::ExportOpml,
             Self::SaveArticleContent => Self::ClearData,
@@ -119,6 +122,7 @@ impl SettingsItem {
             Self::EagerArticleFetch => Self::ClearArticleCache,
             Self::AutoFetchOnStart => Self::EagerArticleFetch,
             Self::ArchivePolicy => Self::AutoFetchOnStart,
+            Self::ScrollLoop => Self::BorderStyle,
             Self::BorderStyle => Self::ArchivePolicy,
         }
     }
@@ -174,5 +178,10 @@ pub enum FeedEditorMode {
     NewCategory {
         /// Parent category ID (None for root level).
         parent_id: Option<CategoryId>,
+    },
+    /// Editing the URL of the feed at this render-list index.
+    EditingUrl {
+        /// Index of the feed item being edited.
+        render_idx: usize,
     },
 }

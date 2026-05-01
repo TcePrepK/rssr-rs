@@ -235,4 +235,7 @@ pub struct UserData {
     /// Policy for how long archived articles are kept before deletion.
     #[serde(default)]
     pub archive_policy: ArchivePolicy,
+    /// Whether list navigation wraps around at the top/bottom (scrollbar loop).
+    #[serde(default = "default_true")]
+    pub scroll_loop: bool,
 }
