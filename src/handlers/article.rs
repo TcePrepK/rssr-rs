@@ -107,7 +107,7 @@ pub(super) async fn handle_article(
 ///
 /// Manages both the list-navigation mode and the inline text-input mode for creating a new
 /// category.  Saves or unsaves the currently selected article when the user confirms a choice.
-pub(super) fn handle_category_picker(app: &mut App, key: KeyEvent) {
+pub(super) fn handle_category_picker(app: &mut App, key: KeyEvent, tx: &UnboundedSender<AppEvent>) {
     let cats_len = app.user_data.saved_categories.len();
     let article_is_saved = get_selected_article(app).is_some_and(|art| {
         app.user_data
@@ -196,7 +196,12 @@ pub(super) fn handle_category_picker(app: &mut App, key: KeyEvent) {
             } else if article_is_saved {
                 // "Unsave"
                 unsave_article(app);
-                app.state = app.category_picker_return_state.clone();
+                if app.state == AppState::CategoryPicker {
+                    app.state = app.category_picker_return_state.clone();
+                }
+                if app.in_saved_context && !app.saved_view_articles.is_empty() {
+                    prefetch_article_if_stub(app, tx);
+                }
             }
         }
         KeyCode::Esc => {
@@ -293,7 +298,10 @@ fn unsave_article(app: &mut App) {
         if app.saved_view_articles.is_empty() {
             app.in_saved_context = false;
             app.selected_article = 0;
-            if matches!(app.state, AppState::ArticleList | AppState::ArticleDetail) {
+            if matches!(
+                app.state,
+                AppState::ArticleList | AppState::ArticleDetail | AppState::CategoryPicker
+            ) {
                 app.state = AppState::SavedCategoryList;
             }
         } else if app.selected_article >= app.saved_view_articles.len() {
@@ -338,47 +346,88 @@ fn update_is_saved_flag(app: &mut App, is_saved: bool) {
 
 /// Proactively fetches full article content when the cursor lands on a stub-length article.
 ///
-/// Does nothing when in saved context (stubs are not pre-fetched there) or when content is
+/// Handles regular feed, category, and saved-view contexts. Does nothing when content is
 /// already at full length.
 fn prefetch_article_if_stub(app: &mut App, tx: &UnboundedSender<AppEvent>) {
-    if app.in_saved_context {
-        return;
-    }
-    let (feed_idx, art_idx) = if app.in_category_context {
-        match app
+    if app.in_category_context {
+        let (feed_idx, art_idx) = match app
             .category_view_articles
             .get(app.selected_article)
             .copied()
         {
             Some(pair) => pair,
             None => return,
-        }
-    } else {
-        (app.selected_feed, app.selected_article)
-    };
+        };
 
-    let article = match app
-        .feeds
-        .get(feed_idx)
-        .and_then(|f| f.articles.get(art_idx))
-    {
-        Some(a) => a,
-        None => return,
-    };
-    if article.content.len() >= CONTENT_STUB_MAX_LEN {
-        return;
+        let article = match app
+            .feeds
+            .get(feed_idx)
+            .and_then(|f| f.articles.get(art_idx))
+        {
+            Some(a) => a,
+            None => return,
+        };
+        if article.content.len() >= CONTENT_STUB_MAX_LEN {
+            return;
+        }
+        let url = article.link.clone();
+        app.article_fetching = true;
+        let tx2 = tx.clone();
+        tokio::spawn(async move {
+            let result = fetch_readable_content(&url).await;
+            let _ = tx2.send(AppEvent::FullArticleFetched(
+                FeedSource::Feed(feed_idx),
+                art_idx,
+                result,
+            ));
+        });
+    } else if app.in_saved_context {
+        // Fetch stub articles from the saved-view list.
+        let article = match app.saved_view_articles.get(app.selected_article) {
+            Some(a) => a,
+            None => return,
+        };
+        if article.content.len() >= CONTENT_STUB_MAX_LEN {
+            return;
+        }
+        let url = article.link.clone();
+        let art_idx = app.selected_article;
+        app.article_fetching = true;
+        let tx2 = tx.clone();
+        tokio::spawn(async move {
+            let result = fetch_readable_content(&url).await;
+            let _ = tx2.send(AppEvent::FullArticleFetched(
+                FeedSource::Saved,
+                art_idx,
+                result,
+            ));
+        });
+    } else {
+        let feed_idx = app.selected_feed;
+        let art_idx = app.selected_article;
+        let article = match app
+            .feeds
+            .get(feed_idx)
+            .and_then(|f| f.articles.get(art_idx))
+        {
+            Some(a) => a,
+            None => return,
+        };
+        if article.content.len() >= CONTENT_STUB_MAX_LEN {
+            return;
+        }
+        let url = article.link.clone();
+        app.article_fetching = true;
+        let tx2 = tx.clone();
+        tokio::spawn(async move {
+            let result = fetch_readable_content(&url).await;
+            let _ = tx2.send(AppEvent::FullArticleFetched(
+                FeedSource::Feed(feed_idx),
+                art_idx,
+                result,
+            ));
+        });
     }
-    let url = article.link.clone();
-    app.article_fetching = true;
-    let tx2 = tx.clone();
-    tokio::spawn(async move {
-        let result = fetch_readable_content(&url).await;
-        let _ = tx2.send(AppEvent::FullArticleFetched(
-            FeedSource::Feed(feed_idx),
-            art_idx,
-            result,
-        ));
-    });
 }
 
 /// Opens the selected article in detail view, marks it as read, and fetches full content if needed.
