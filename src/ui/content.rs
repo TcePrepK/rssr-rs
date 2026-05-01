@@ -567,7 +567,7 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect, show_f
     let (area, footer_area) = if show_footer {
         let cf = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .constraints([Constraint::Min(0), Constraint::Length(0)])
             .split(area);
         (cf[0], cf[1])
     } else {
