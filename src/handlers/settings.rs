@@ -273,6 +273,21 @@ pub(super) fn handle_saved_category_editor(app: &mut App, key: KeyEvent) {
         KeyCode::Char('d') => {
             let cursor = app.saved_cat_editor_scroll.cursor;
             if cursor < app.user_data.saved_categories.len() {
+                app.state = AppState::SavedCategoryEditorDeleteConfirm;
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.state = AppState::SavedCategoryList;
+        }
+        _ => {}
+    }
+}
+
+pub(super) fn handle_saved_category_editor_delete_confirm(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Enter => {
+            let cursor = app.saved_cat_editor_scroll.cursor;
+            if cursor < app.user_data.saved_categories.len() {
                 let cat_id = app.user_data.saved_categories[cursor].id;
                 let article_count = app
                     .user_data
@@ -289,9 +304,10 @@ pub(super) fn handle_saved_category_editor(app: &mut App, key: KeyEvent) {
                     "Category deleted. {article_count} article(s) unsaved."
                 ));
             }
+            app.state = AppState::SavedCategoryEditor;
         }
         KeyCode::Esc | KeyCode::Char('q') => {
-            app.state = AppState::SavedCategoryList;
+            app.state = AppState::SavedCategoryEditor;
         }
         _ => {}
     }
