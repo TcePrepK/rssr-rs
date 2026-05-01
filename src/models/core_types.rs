@@ -64,11 +64,75 @@ pub struct Article {
     /// Unix timestamp (seconds) of when the article was published.
     #[serde(default)]
     pub published_secs: Option<i64>,
+    /// Whether this article has been archived (was absent from the feed's latest fetch).
+    /// Archived articles are shown in a separate section in the article list.
+    #[serde(default)]
+    pub is_archived: bool,
 }
 
 /// Default serde function that returns `true`.
 fn default_true() -> bool {
     true
+}
+
+/// Controls how long articles are kept after they disappear from a feed's latest fetch.
+///
+/// Articles not in the newest fetch are marked archived. Archived articles older than
+/// the selected threshold are deleted. `Forever` keeps them indefinitely.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub enum ArchivePolicy {
+    TwoDays,
+    #[default]
+    OneWeek,
+    OneMonth,
+    ThreeMonths,
+    Forever,
+}
+
+impl ArchivePolicy {
+    /// Returns the threshold duration in seconds, or `None` for `Forever`.
+    pub fn threshold_secs(&self) -> Option<i64> {
+        match self {
+            ArchivePolicy::TwoDays => Some(2 * 24 * 3600),
+            ArchivePolicy::OneWeek => Some(7 * 24 * 3600),
+            ArchivePolicy::OneMonth => Some(30 * 24 * 3600),
+            ArchivePolicy::ThreeMonths => Some(90 * 24 * 3600),
+            ArchivePolicy::Forever => None,
+        }
+    }
+
+    /// Human-readable label shown in the settings UI.
+    pub fn label(&self) -> &'static str {
+        match self {
+            ArchivePolicy::TwoDays => "2 days",
+            ArchivePolicy::OneWeek => "1 week",
+            ArchivePolicy::OneMonth => "1 month",
+            ArchivePolicy::ThreeMonths => "3 months",
+            ArchivePolicy::Forever => "Forever",
+        }
+    }
+
+    /// Returns the next policy in the cycle (wraps around).
+    pub fn next(&self) -> ArchivePolicy {
+        match self {
+            ArchivePolicy::TwoDays => ArchivePolicy::OneWeek,
+            ArchivePolicy::OneWeek => ArchivePolicy::OneMonth,
+            ArchivePolicy::OneMonth => ArchivePolicy::ThreeMonths,
+            ArchivePolicy::ThreeMonths => ArchivePolicy::Forever,
+            ArchivePolicy::Forever => ArchivePolicy::TwoDays,
+        }
+    }
+
+    /// Returns the previous policy in the cycle (wraps around).
+    pub fn prev(&self) -> ArchivePolicy {
+        match self {
+            ArchivePolicy::TwoDays => ArchivePolicy::Forever,
+            ArchivePolicy::OneWeek => ArchivePolicy::TwoDays,
+            ArchivePolicy::OneMonth => ArchivePolicy::OneWeek,
+            ArchivePolicy::ThreeMonths => ArchivePolicy::OneMonth,
+            ArchivePolicy::Forever => ArchivePolicy::ThreeMonths,
+        }
+    }
 }
 
 /// A user-defined category for saved articles.
@@ -115,4 +179,7 @@ pub struct UserData {
     /// Whether to automatically fetch feeds when the app starts.
     #[serde(default = "default_true")]
     pub auto_fetch_on_start: bool,
+    /// Policy for how long archived articles are kept before deletion.
+    #[serde(default)]
+    pub archive_policy: ArchivePolicy,
 }
