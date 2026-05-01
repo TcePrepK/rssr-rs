@@ -87,15 +87,47 @@ async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()
 
     // Kick off initial feed fetches for all persisted feeds (unless disabled in settings).
     if app.user_data.fetch_policy != FetchPolicy::Never {
-        let fetch_count = app.feeds.len();
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        // Determine which feeds need fetching based on the policy and last-fetched time.
+        let fetch_indices: Vec<usize> = app
+            .feeds
+            .iter()
+            .enumerate()
+            .filter(|(_, feed)| match app.user_data.fetch_policy {
+                FetchPolicy::OnStart => true,
+                FetchPolicy::Never => false,
+                FetchPolicy::EveryHour => feed
+                    .last_fetched_secs
+                    .is_none_or(|last| now_secs - last >= 3600),
+                FetchPolicy::EveryDay => feed
+                    .last_fetched_secs
+                    .is_none_or(|last| now_secs - last >= 86400),
+            })
+            .map(|(idx, _)| idx)
+            .collect();
+
+        let fetch_count = fetch_indices.len();
         app.feeds_total = fetch_count;
         app.feeds_pending = fetch_count;
         if fetch_count > 0 {
             app.set_status("Fetching feeds...");
         }
-        for (idx, feed) in app.feeds.iter().enumerate() {
+
+        // Mark skipped feeds as already fetched so the spinner doesn't show for them.
+        let fetch_set: std::collections::HashSet<usize> = fetch_indices.iter().copied().collect();
+        for (idx, feed) in app.feeds.iter_mut().enumerate() {
+            if !fetch_set.contains(&idx) {
+                feed.fetched = true;
+            }
+        }
+
+        for idx in fetch_indices {
             let tx2 = tx.clone();
-            let url = feed.url.clone();
+            let url = app.feeds[idx].url.clone();
             tokio::spawn(async move {
                 let result = fetch_feed(&url).await;
                 let _ = tx2.send(AppEvent::FeedFetched(idx, result));
@@ -360,6 +392,7 @@ fn on_feed_fetched(
     if app.feeds_pending == 0 {
         app.feeds_total = 0;
         app.set_status("Feeds loaded.");
+        let _ = storage::save_feeds(&app.feeds);
     }
 
     // Persist article cache
