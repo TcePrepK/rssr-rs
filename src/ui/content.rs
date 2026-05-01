@@ -75,6 +75,22 @@ fn age_color(secs: i64) -> ratatui::style::Color {
     }
 }
 
+fn draw_three_panel(f: &mut Frame, app: &mut App, right_area: Rect, is_preview: bool) {
+    let right_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(3)])
+        .split(right_area);
+
+    let panels = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
+        .split(right_rows[0]);
+
+    draw_article_list(f, app, panels[0]);
+    draw_article_detail(f, app, panels[1], is_preview);
+    draw_article_list_footer(f, app, right_rows[1]);
+}
+
 pub(super) fn draw_feeds_tab(f: &mut Frame, app: &mut App, area: Rect) {
     if matches!(app.state, AppState::FeedEditor | AppState::FeedEditorRename)
         || (app.state == AppState::AddFeed
@@ -97,22 +113,15 @@ pub(super) fn draw_feeds_tab(f: &mut Frame, app: &mut App, area: Rect) {
             draw_article_list(f, app, cols[1]);
         }
         AppState::ArticleList => {
-            // Three-panel: split right area vertically for footer, then horizontally for list+preview.
-            let right_rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(0), Constraint::Length(3)])
-                .split(cols[1]);
-
-            let panels = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
-                .split(right_rows[0]);
-
-            draw_article_list(f, app, panels[0]);
-            draw_article_detail(f, app, panels[1], true);
-            draw_article_list_footer(f, app, right_rows[1]);
+            draw_three_panel(f, app, cols[1], true);
         }
-        AppState::ArticleDetail => draw_article_detail(f, app, cols[1], false),
+        AppState::ArticleDetail => {
+            draw_three_panel(f, app, cols[1], false);
+        }
+        AppState::CategoryPicker => {
+            let is_preview = app.category_picker_return_state != AppState::ArticleDetail;
+            draw_three_panel(f, app, cols[1], is_preview);
+        }
         _ => {}
     }
 }
@@ -128,21 +137,15 @@ pub(super) fn draw_saved_tab(f: &mut Frame, app: &mut App, area: Rect) {
     match app.state {
         AppState::SavedCategoryList => draw_article_list(f, app, cols[1]),
         AppState::ArticleList => {
-            let right_rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(0), Constraint::Length(3)])
-                .split(cols[1]);
-
-            let panels = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
-                .split(right_rows[0]);
-
-            draw_article_list(f, app, panels[0]);
-            draw_article_detail(f, app, panels[1], true);
-            draw_article_list_footer(f, app, right_rows[1]);
+            draw_three_panel(f, app, cols[1], true);
         }
-        AppState::ArticleDetail => draw_article_detail(f, app, cols[1], false),
+        AppState::ArticleDetail => {
+            draw_three_panel(f, app, cols[1], false);
+        }
+        AppState::CategoryPicker => {
+            let is_preview = app.category_picker_return_state != AppState::ArticleDetail;
+            draw_three_panel(f, app, cols[1], is_preview);
+        }
         _ => draw_article_list(f, app, cols[1]),
     }
 }
@@ -208,7 +211,8 @@ fn draw_saved_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
             Style::default().fg(MAUVE)
         } else {
             Style::default().fg(SUBTEXT0)
-        });
+        })
+        .bg(BASE);
 
     let list = List::new(items).block(block);
     app.saved_sidebar_list_state.select(Some(app.saved_sidebar_cursor));
@@ -416,7 +420,7 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .border_set(border_set(app.user_data.border_rounded))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(if is_navigating { MAUVE } else { SURFACE0 }))
+        .border_style(Style::default().fg(SURFACE0))
         .bg(BASE)
         .title(Span::styled(
             feed_title,
@@ -470,7 +474,9 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
                 Style::default().fg(TEXT)
             };
 
-            let read_icon_style = if article.is_read {
+            let read_icon_style = if article.is_saved {
+                Style::default().fg(YELLOW)
+            } else if article.is_read {
                 Style::default().fg(SUBTEXT0)
             } else {
                 Style::default().fg(BLUE)
@@ -478,8 +484,8 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
 
             let is_selected = app.selected_article == i
                 && (app.state == AppState::ArticleList || app.in_saved_context);
-            // read_icon (2) + star_icon (2) = 4 chars prefix
-            let title_available = (list_area.width as usize).saturating_sub(4);
+            // read_icon (2) = 2 chars prefix
+            let title_available = (list_area.width as usize).saturating_sub(2);
             let displayed_title = if is_selected {
                 let elapsed = app.tick.saturating_sub(app.article_title_start_tick);
                 scroll_title(&article.title, title_available, elapsed)
@@ -488,7 +494,6 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
             };
             ListItem::new(Line::from(vec![
                 Span::styled(article.read_icon(), read_icon_style),
-                Span::styled(article.star_icon(), Style::default().fg(YELLOW)),
                 Span::raw(displayed_title),
             ]))
             .style(style)
