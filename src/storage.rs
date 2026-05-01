@@ -4,16 +4,16 @@ use std::{collections::HashMap, fs, path::PathBuf};
 // ── Data directory ────────────────────────────────────────────────────────────
 
 /// Returns (and creates if needed) the platform-appropriate data directory:
-///   Linux/BSD  →  ~/.local/share/rssr/
-///   macOS      →  ~/Library/Application Support/rssr/
-///   Windows    →  %APPDATA%\rssr\
+///   Linux/BSD  →  ~/.local/share/brochure/
+///   macOS      →  ~/Library/Application Support/brochure/
+///   Windows    →  %APPDATA%\brochure\
 ///
 /// Falls back to the current working directory if the platform dir cannot be
 /// determined (e.g. inside a container with no home directory).
 fn data_dir() -> PathBuf {
     let dir = dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("rssr");
+        .join("brochure");
     if !dir.exists() {
         let _ = fs::create_dir_all(&dir);
     }

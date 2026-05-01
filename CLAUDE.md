@@ -1,4 +1,4 @@
-# CLAUDE.md — rssr agent guide
+# CLAUDE.md — Brochure agent guide
 
 ---
 
@@ -28,9 +28,9 @@ rule), fix it in the same commit.
    within the same category; otherwise take the topmost incomplete item.
 3. **If anything is unclear**: stop and ask the user. Do not assume scope, layout, or behavior. Just ask directly in
    your response.
-4. **On completion**: remove the item from TASKS.md and append it to `done-tasks/YYYY-MM-DD.md` (today's date).
-   Create the file if it doesn't exist; use the heading `# YYYY-MM-DD`. Never commit without doing this first.
-   Never read the `done-tasks/` files — they are an append-only archive.
+4. **On completion**: remove the item from TASKS.md and append it to `changelog/vX.Y.Z.md` (current version,
+   e.g. `changelog/v0.1.0.md`). Create the file if it doesn't exist; use the heading `# vX.Y.Z`. Never commit
+   without doing this first. Never read the `changelog/` files — they are an append-only archive.
 
 **Blocked entry format** (required fields):
 

@@ -164,6 +164,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "brochure"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "dirs",
+ "feed-rs",
+ "html2md",
+ "open",
+ "quick-xml 0.39.2",
+ "ratatui",
+ "readability",
+ "regex",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tui-markdown",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2526,27 +2547,6 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "rssr-rs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crossterm",
- "dirs",
- "feed-rs",
- "html2md",
- "open",
- "quick-xml 0.39.2",
- "ratatui",
- "readability",
- "regex",
- "reqwest 0.13.2",
- "serde",
- "serde_json",
- "tokio",
- "tui-markdown",
 ]
 
 [[package]]

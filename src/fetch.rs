@@ -5,7 +5,7 @@ fn http_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .user_agent("rssr/0.1 (RSS reader)")
+            .user_agent("brochure/0.1 (RSS reader)")
             .build()
             .expect("failed to build HTTP client")
     })

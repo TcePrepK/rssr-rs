@@ -1,6 +1,7 @@
-# rssr
+# Brochure
 
-A terminal RSS reader built with [Ratatui](https://ratatui.rs). Catppuccin Mocha theme, keyboard-driven navigation, and full RSS/Atom support.
+A terminal RSS reader built with [Ratatui](https://ratatui.rs). Catppuccin Mocha theme, keyboard-driven navigation, and
+full RSS/Atom support.
 
 ## Features
 
@@ -14,7 +15,7 @@ A terminal RSS reader built with [Ratatui](https://ratatui.rs). Catppuccin Mocha
 ## Installation
 
 ```bash
-cargo install rssr-rs
+cargo install brochure
 ```
 
 Requires Rust 1.85+ (edition 2024).
@@ -24,39 +25,39 @@ Requires Rust 1.85+ (edition 2024).
 Launch with:
 
 ```bash
-rssr
+brochure
 ```
 
 ### Keybindings
 
-| Key | Context | Action |
-|-----|---------|--------|
-| `j` / `↓` | Lists | Next item |
-| `k` / `↑` | Lists | Previous item |
-| `Enter` | Feed list | Open feed / toggle category |
-| `Enter` | Article list | Open article |
-| `Esc` | Any | Go back |
-| `Tab` / `Shift+Tab` | Any | Switch tab |
-| `q` | Most views | Quit |
-| `r` | Feed / article list | Refresh current feed |
-| `e` | Feed list | Open feed editor |
-| `m` | Article list / detail | Toggle read/unread |
-| `s` | Article list / detail | Toggle starred |
-| `o` | Article detail | Open link in browser |
-| `a` | Feed editor | Add feed |
-| `n` | Feed editor | New category |
-| `r` | Feed editor | Rename selected item |
-| `d` | Feed editor | Delete selected item |
+| Key                 | Context               | Action                      |
+|---------------------|-----------------------|-----------------------------|
+| `j` / `↓`           | Lists                 | Next item                   |
+| `k` / `↑`           | Lists                 | Previous item               |
+| `Enter`             | Feed list             | Open feed / toggle category |
+| `Enter`             | Article list          | Open article                |
+| `Esc`               | Any                   | Go back                     |
+| `Tab` / `Shift+Tab` | Any                   | Switch tab                  |
+| `q`                 | Most views            | Quit                        |
+| `r`                 | Feed / article list   | Refresh current feed        |
+| `e`                 | Feed list             | Open feed editor            |
+| `m`                 | Article list / detail | Toggle read/unread          |
+| `s`                 | Article list / detail | Toggle starred              |
+| `o`                 | Article detail        | Open link in browser        |
+| `a`                 | Feed editor           | Add feed                    |
+| `n`                 | Feed editor           | New category                |
+| `r`                 | Feed editor           | Rename selected item        |
+| `d`                 | Feed editor           | Delete selected item        |
 
 ## Data storage
 
 All data is stored in the platform data directory:
 
-| Platform | Path |
-|----------|------|
-| Linux / BSD | `~/.local/share/rssr/` |
-| macOS | `~/Library/Application Support/rssr/` |
-| Windows | `%APPDATA%\rssr\` |
+| Platform    | Path                                      |
+|-------------|-------------------------------------------|
+| Linux / BSD | `~/.local/share/brochure/`                |
+| macOS       | `~/Library/Application Support/brochure/` |
+| Windows     | `%APPDATA%\brochure\`                     |
 
 Files: `feeds.json`, `user_data.json`, `articles.json`, `categories.json`
 

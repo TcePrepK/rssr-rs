@@ -1,12 +1,12 @@
-/# ARCHITECTURE.md — rssr design reference
+# ARCHITECTURE.md — Brochure design reference
 
-Human-readable reference for the rssr codebase. Keep this up to date when design details change.
+Human-readable reference for the Brochure codebase. Keep this up to date when design details change.
 
 ---
 
 ## Project Overview
 
-**rssr** is a terminal RSS reader written in Rust.
+**Brochure** is a terminal RSS reader written in Rust.
 
 | Crate / Library    | Role                                       |
 |--------------------|--------------------------------------------|
@@ -246,9 +246,9 @@ All persistent data lives under the platform data directory (via the `dirs` crat
 
 | Platform  | Path                                  |
 |-----------|---------------------------------------|
-| Linux/BSD | `~/.local/share/rssr/`                |
-| macOS     | `~/Library/Application Support/rssr/` |
-| Windows   | `%APPDATA%\rssr\`                     |
+| Linux/BSD | `~/.local/share/brochure/`                |
+| macOS     | `~/Library/Application Support/brochure/` |
+| Windows   | `%APPDATA%\brochure\`                     |
 
 | File              | Purpose                                    |
 |-------------------|--------------------------------------------|
