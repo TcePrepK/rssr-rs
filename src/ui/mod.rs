@@ -82,13 +82,21 @@ pub(crate) fn tree_connector(
     if depth == 0 {
         return root_str;
     }
-    let next_depth = tree
-        .get(idx + 1)
-        .map(|n| match n {
-            FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => *depth,
+    let is_last = tree[idx + 1..]
+        .iter()
+        .find(|n| {
+            let d = match n {
+                FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => *depth,
+            };
+            d <= depth
         })
-        .unwrap_or(0);
-    if next_depth < depth {
+        .is_none_or(|n| {
+            let d = match n {
+                FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => *depth,
+            };
+            d < depth
+        });
+    if is_last {
         if rounded { "╰─ " } else { "└─ " }
     } else {
         "├─ "
