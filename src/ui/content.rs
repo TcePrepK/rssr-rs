@@ -18,7 +18,7 @@ use ratatui::prelude::Stylize;
 
 use crate::{
     app::{App, visible_tree_items},
-    models::{AppState, FeedTreeItem, Tab},
+    models::{AppState, Article, FeedTreeItem, Tab},
 };
 
 use super::{
@@ -82,6 +82,22 @@ fn age_color(secs: i64) -> ratatui::style::Color {
     } else {
         SUBTEXT0
     }
+}
+
+/// Splits articles into current and archived groups, returning indices.
+/// Returns (current_indices, archived_indices, has_archived).
+fn split_articles(articles: &[Article]) -> (Vec<usize>, Vec<usize>, bool) {
+    let mut current = Vec::new();
+    let mut archived = Vec::new();
+    for (i, article) in articles.iter().enumerate() {
+        if article.is_archived {
+            archived.push(i);
+        } else {
+            current.push(i);
+        }
+    }
+    let has_archived = !archived.is_empty();
+    (current, archived, has_archived)
 }
 
 /// Renders a three-panel layout: article list (left) and article detail (right).
@@ -669,45 +685,137 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let items: Vec<ListItem> = articles
-        .iter()
-        .enumerate()
-        .map(|(i, article)| {
-            let style = if app.selected_article == i
-                && (app.state == AppState::ArticleList || app.in_saved_context)
-            {
-                Style::default()
-                    .fg(MAUVE)
-                    .bg(SURFACE0)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_navigating && app.selected_article == i {
-                Style::default().fg(MAUVE)
-            } else if article.is_read {
-                Style::default().fg(SUBTEXT0)
-            } else {
-                Style::default().fg(TEXT)
-            };
+    let (current_indices, archived_indices, has_archived) = split_articles(articles);
 
-            let is_selected = app.selected_article == i
-                && (app.state == AppState::ArticleList || app.in_saved_context);
-            // read_icon (2) = 2 chars prefix
-            let title_available = (list_area.width as usize).saturating_sub(2);
-            let displayed_title = if is_selected {
-                let elapsed = app.tick.saturating_sub(app.article_title_start_tick);
-                scroll_title(&article.title, title_available, elapsed)
-            } else {
-                article.title.clone()
-            };
-            ListItem::new(Line::from(vec![
-                Span::styled(article.get_icon(), article.get_icon_style()),
-                Span::raw(displayed_title),
-            ]))
-            .style(style)
-        })
-        .collect();
+    // Build list items: current articles + optional separator + archived articles
+    let mut items: Vec<ListItem> = Vec::new();
 
-    app.article_list_state.select(Some(app.selected_article));
-    let total = articles.len();
+    // Add current articles
+    for &i in &current_indices {
+        let article = &articles[i];
+        let is_selected = app.selected_article == i
+            && (app.state == AppState::ArticleList || app.in_saved_context);
+        let style = if is_selected {
+            Style::default()
+                .fg(MAUVE)
+                .bg(SURFACE0)
+                .add_modifier(Modifier::BOLD)
+        } else if is_navigating && app.selected_article == i {
+            Style::default().fg(MAUVE)
+        } else if article.is_read {
+            Style::default().fg(SUBTEXT0)
+        } else {
+            Style::default().fg(TEXT)
+        };
+
+        // Build title with warning icon if no timestamp
+        let mut title_spans = Vec::new();
+        if article.published_secs.is_none() {
+            title_spans.push(Span::styled("⚠ ", Style::default().fg(YELLOW)));
+        }
+        let title_available = (list_area.width as usize).saturating_sub(
+            2 + if article.published_secs.is_none() {
+                2
+            } else {
+                0
+            },
+        );
+        let displayed_title = if is_selected {
+            let elapsed = app.tick.saturating_sub(app.article_title_start_tick);
+            scroll_title(&article.title, title_available, elapsed)
+        } else {
+            article.title.clone()
+        };
+        title_spans.push(Span::raw(displayed_title));
+
+        items.push(
+            ListItem::new(Line::from(
+                vec![Span::styled(article.get_icon(), article.get_icon_style())]
+                    .into_iter()
+                    .chain(title_spans)
+                    .collect::<Vec<_>>(),
+            ))
+            .style(style),
+        );
+    }
+
+    // Add separator if there are archived articles
+    if has_archived {
+        items.push(ListItem::new(Line::from(Span::styled(
+            " ── Archived ──",
+            Style::default().fg(SUBTEXT0),
+        ))));
+    }
+
+    // Add archived articles
+    for &i in &archived_indices {
+        let article = &articles[i];
+        let is_selected = app.selected_article == i
+            && (app.state == AppState::ArticleList || app.in_saved_context);
+        let style = if is_selected {
+            Style::default()
+                .fg(MAUVE)
+                .bg(SURFACE0)
+                .add_modifier(Modifier::BOLD)
+        } else if is_navigating && app.selected_article == i {
+            Style::default().fg(MAUVE)
+        } else if article.is_read {
+            Style::default().fg(SUBTEXT0)
+        } else {
+            Style::default().fg(TEXT)
+        };
+
+        // Build title with warning icon if no timestamp
+        let mut title_spans = Vec::new();
+        if article.published_secs.is_none() {
+            title_spans.push(Span::styled("⚠ ", Style::default().fg(YELLOW)));
+        }
+        let title_available = (list_area.width as usize).saturating_sub(
+            2 + if article.published_secs.is_none() {
+                2
+            } else {
+                0
+            },
+        );
+        let displayed_title = if is_selected {
+            let elapsed = app.tick.saturating_sub(app.article_title_start_tick);
+            scroll_title(&article.title, title_available, elapsed)
+        } else {
+            article.title.clone()
+        };
+        title_spans.push(Span::raw(displayed_title));
+
+        items.push(
+            ListItem::new(Line::from(
+                vec![Span::styled(article.get_icon(), article.get_icon_style())]
+                    .into_iter()
+                    .chain(title_spans)
+                    .collect::<Vec<_>>(),
+            ))
+            .style(style),
+        );
+    }
+
+    // Calculate the visual selection position, accounting for the separator
+    let visual_selected =
+        if has_archived && app.selected_article >= archived_indices.first().copied().unwrap_or(0) {
+            // Article is in the archived section; add 1 for separator
+            current_indices.len()
+                + 1
+                + archived_indices
+                    .iter()
+                    .position(|&i| i == app.selected_article)
+                    .unwrap_or(0)
+        } else {
+            // Article is in the current section
+            current_indices
+                .iter()
+                .position(|&i| i == app.selected_article)
+                .unwrap_or(app.selected_article)
+        };
+
+    app.article_list_state.select(Some(visual_selected));
+    let total = items.len();
     let has_scrollbar = total > list_area.height as usize;
     let list_render_area = if has_scrollbar {
         Rect {
@@ -724,7 +832,7 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
     );
 
     if has_scrollbar {
-        let mut scrollbar_state = ScrollbarState::new(total).position(app.selected_article);
+        let mut scrollbar_state = ScrollbarState::new(total).position(visual_selected);
         f.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .style(Style::default().fg(SURFACE0)),
