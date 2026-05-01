@@ -40,6 +40,9 @@ pub(super) async fn handle_article(
                 app.scroll_offset = (app.scroll_offset + 1).min(max);
             } else {
                 app.next();
+                if app.state == AppState::ArticleList {
+                    prefetch_article_if_stub(app, tx);
+                }
             }
         }
         KeyCode::Up => {
@@ -47,6 +50,9 @@ pub(super) async fn handle_article(
                 app.scroll_offset = app.scroll_offset.saturating_sub(1);
             } else {
                 app.previous();
+                if app.state == AppState::ArticleList {
+                    prefetch_article_if_stub(app, tx);
+                }
             }
         }
         KeyCode::Enter if app.state == AppState::ArticleList => {
@@ -238,6 +244,27 @@ fn update_is_saved_flag(app: &mut App, is_saved: bool) {
     {
         art.is_saved = is_saved;
     }
+}
+
+fn prefetch_article_if_stub(app: &mut App, tx: &UnboundedSender<AppEvent>) {
+    if app.in_saved_context {
+        return;
+    }
+    let article = match get_selected_article(app) {
+        Some(a) => a,
+        None => return,
+    };
+    if article.content.len() >= CONTENT_STUB_MAX_LEN {
+        return;
+    }
+    let tx2 = tx.clone();
+    let url = article.link.clone();
+    let art_idx = app.selected_article;
+    let feed_idx = app.selected_feed;
+    tokio::spawn(async move {
+        let result = fetch_readable_content(&url).await;
+        let _ = tx2.send(AppEvent::FullArticleFetched(FeedSource::Feed(feed_idx), art_idx, result));
+    });
 }
 
 fn open_article(app: &mut App, tx: &UnboundedSender<AppEvent>) {
