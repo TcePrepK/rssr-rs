@@ -1,10 +1,17 @@
 use crate::models::{
     AddFeedStep, AppState, Article, Category, CategoryId, EditorPanel, Feed, FeedEditorMode,
-    FeedTreeItem, SettingsItem, Tab, UserData, FAVORITES_URL,
+    FeedTreeItem, ListScroll, SettingsItem, Tab, UserData, FAVORITES_URL,
 };
 use crate::storage::{article_cache_size, load_categories, load_feeds, load_user_data};
 use ratatui::widgets::ListState;
 use std::collections::HashSet;
+
+/// One row in the category-context article list: either a feed header or a selectable article.
+#[derive(Debug, Clone)]
+pub enum CategoryViewItem {
+    Header(String),
+    Article { feeds_idx: usize, article_idx: usize },
+}
 
 /// Central application state passed to every frame draw and event handler.
 pub struct App {
@@ -60,8 +67,8 @@ pub struct App {
     pub category_picker_return_state: AppState,
 
     // ── Saved category editor ────────────────────────────────────────────────
-    /// Cursor in the SavedCategoryEditor list.
-    pub saved_cat_editor_cursor: usize,
+    /// Scroll state for the SavedCategoryEditor list.
+    pub saved_cat_editor_scroll: ListScroll,
 
     // ── Multi-step AddFeed ───────────────────────────────────────────────────
     pub add_feed_step: AddFeedStep,
@@ -96,6 +103,13 @@ pub struct App {
     pub sidebar_collapsed: HashSet<CategoryId>,
     /// Cursor into the flattened visible-tree list for the sidebar/FeedList.
     pub sidebar_cursor: usize,
+
+    // ── Category context ─────────────────────────────────────────────────────
+    /// Set to Some(id) when sidebar cursor rests on a category header; None when on a feed.
+    pub selected_sidebar_category: Option<CategoryId>,
+    /// Articles aggregated from all feeds under `selected_sidebar_category`.
+    /// Each entry is (feed_title, article_index_in_feed, feeds_idx).
+    pub category_view_items: Vec<CategoryViewItem>,
 
     // ── Cache ────────────────────────────────────────────────────────────────
     /// Byte size of articles.json; refreshed at startup and after cache clear.
@@ -178,7 +192,7 @@ impl App {
             category_picker_new_mode: false,
             category_picker_input: String::new(),
             category_picker_return_state: AppState::ArticleList,
-            saved_cat_editor_cursor: 0,
+            saved_cat_editor_scroll: ListScroll::default(),
             add_feed_step: AddFeedStep::Url,
             add_feed_url: String::new(),
             add_feed_fetched_title: None,
@@ -192,6 +206,8 @@ impl App {
             categories,
             sidebar_collapsed: HashSet::new(),
             sidebar_cursor: 0,
+            selected_sidebar_category: None,
+            category_view_items: Vec::new(),
             article_cache_size: article_cache_size(),
             editor_cursor: initial_editor_cursor,
             editor_collapsed: HashSet::new(),
@@ -250,9 +266,16 @@ impl App {
 
                 self.sidebar_cursor = (self.sidebar_cursor + 1) % items.len();
                 self.sidebar_title_start_tick = self.tick;
-                if let Some(FeedTreeItem::Feed { feeds_idx, .. }) = items.get(self.sidebar_cursor) {
-                    self.selected_feed = *feeds_idx;
-                    self.selected_article = 0;
+                match items.get(self.sidebar_cursor) {
+                    Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
+                        self.selected_feed = *feeds_idx;
+                        self.selected_article = 0;
+                        self.clear_category_view();
+                    }
+                    Some(FeedTreeItem::Category { id, .. }) => {
+                        self.populate_category_view(*id);
+                    }
+                    None => {}
                 }
             }
             AppState::ArticleList => {
@@ -333,9 +356,16 @@ impl App {
                     .unwrap_or(items.len() - 1);
                 self.sidebar_title_start_tick = self.tick;
 
-                if let Some(FeedTreeItem::Feed { feeds_idx, .. }) = items.get(self.sidebar_cursor) {
-                    self.selected_feed = *feeds_idx;
-                    self.selected_article = 0;
+                match items.get(self.sidebar_cursor) {
+                    Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
+                        self.selected_feed = *feeds_idx;
+                        self.selected_article = 0;
+                        self.clear_category_view();
+                    }
+                    Some(FeedTreeItem::Category { id, .. }) => {
+                        self.populate_category_view(*id);
+                    }
+                    None => {}
                 }
             }
             AppState::ArticleList => {
@@ -418,6 +448,8 @@ impl App {
                         } else {
                             self.sidebar_collapsed.insert(*id);
                         }
+                        // Re-populate category view since visibility changed.
+                        self.populate_category_view(*id);
                     }
                     Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
                         self.selected_feed = *feeds_idx;
@@ -459,6 +491,34 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Populate `category_view_items` for the given category id and mark it as selected.
+    pub fn populate_category_view(&mut self, cat_id: CategoryId) {
+        self.selected_sidebar_category = Some(cat_id);
+        self.category_view_items.clear();
+
+        let feed_indices = feeds_in_category(cat_id, &self.categories, &self.feeds);
+        for feeds_idx in feed_indices {
+            let feed = &self.feeds[feeds_idx];
+            if feed.articles.is_empty() {
+                continue;
+            }
+            self.category_view_items
+                .push(CategoryViewItem::Header(feed.title.clone()));
+            for article_idx in 0..feed.articles.len() {
+                self.category_view_items.push(CategoryViewItem::Article {
+                    feeds_idx,
+                    article_idx,
+                });
+            }
+        }
+    }
+
+    /// Clear the category context (cursor moved off a category onto a feed).
+    pub fn clear_category_view(&mut self) {
+        self.selected_sidebar_category = None;
+        self.category_view_items.clear();
     }
 
     /// Populate `saved_view_articles` from the currently selected sidebar entry.
@@ -565,6 +625,37 @@ pub fn visible_tree_items(
     collapsed: &HashSet<CategoryId>,
 ) -> Vec<FeedTreeItem> {
     visible_tree_items_filtered(categories, feeds, collapsed, None)
+}
+
+/// Collects feed indices for all feeds directly or transitively under `cat_id`,
+/// in tree order (sorted by order field within each level).
+fn feeds_in_category(
+    cat_id: CategoryId,
+    categories: &[Category],
+    feeds: &[Feed],
+) -> Vec<usize> {
+    let mut result = Vec::new();
+
+    // Direct feeds in this category, sorted by order.
+    let mut direct: Vec<(usize, &Feed)> = feeds
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.category_id == Some(cat_id) && f.url != FAVORITES_URL)
+        .collect();
+    direct.sort_by_key(|(_, f)| f.order);
+    result.extend(direct.iter().map(|(i, _)| *i));
+
+    // Subcategories, sorted by order.
+    let mut subcats: Vec<&Category> = categories
+        .iter()
+        .filter(|c| c.parent_id == Some(cat_id))
+        .collect();
+    subcats.sort_by_key(|c| c.order);
+    for subcat in subcats {
+        result.extend(feeds_in_category(subcat.id, categories, feeds));
+    }
+
+    result
 }
 
 /// Returns only `FeedTreeItem::Category` rows from the visible tree.
