@@ -6,13 +6,6 @@ use crate::storage::{article_cache_size, load_categories, load_feeds, load_user_
 use ratatui::widgets::ListState;
 use std::collections::HashSet;
 
-/// One row in the category-context article list: either a feed header or a selectable article.
-#[derive(Debug, Clone)]
-pub enum CategoryViewItem {
-    Header(String),
-    Article { feeds_idx: usize, article_idx: usize },
-}
-
 /// Central application state passed to every frame draw and event handler.
 pub struct App {
     pub state: AppState,
@@ -107,9 +100,10 @@ pub struct App {
     // ── Category context ─────────────────────────────────────────────────────
     /// Set to Some(id) when sidebar cursor rests on a category header; None when on a feed.
     pub selected_sidebar_category: Option<CategoryId>,
-    /// Articles aggregated from all feeds under `selected_sidebar_category`.
-    /// Each entry is (feed_title, article_index_in_feed, feeds_idx).
-    pub category_view_items: Vec<CategoryViewItem>,
+    /// (feeds_idx, article_idx) pairs for all articles in the selected category, sorted by date desc.
+    pub category_view_articles: Vec<(usize, usize)>,
+    /// True while ArticleList/ArticleDetail is showing the category-context article list.
+    pub in_category_context: bool,
 
     // ── Cache ────────────────────────────────────────────────────────────────
     /// Byte size of articles.json; refreshed at startup and after cache clear.
@@ -207,7 +201,8 @@ impl App {
             sidebar_collapsed: HashSet::new(),
             sidebar_cursor: 0,
             selected_sidebar_category: None,
-            category_view_items: Vec::new(),
+            category_view_articles: Vec::new(),
+            in_category_context: false,
             article_cache_size: article_cache_size(),
             editor_cursor: initial_editor_cursor,
             editor_collapsed: HashSet::new(),
@@ -279,7 +274,9 @@ impl App {
                 }
             }
             AppState::ArticleList => {
-                let len = if self.in_saved_context {
+                let len = if self.in_category_context {
+                    self.category_view_articles.len()
+                } else if self.in_saved_context {
                     self.saved_view_articles.len()
                 } else {
                     self.feeds
@@ -369,7 +366,9 @@ impl App {
                 }
             }
             AppState::ArticleList => {
-                let len = if self.in_saved_context {
+                let len = if self.in_category_context {
+                    self.category_view_articles.len()
+                } else if self.in_saved_context {
                     self.saved_view_articles.len()
                 } else {
                     self.feeds
@@ -442,14 +441,12 @@ impl App {
                     visible_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
                 match items.get(self.sidebar_cursor) {
                     Some(FeedTreeItem::Category { id, .. }) => {
-                        // Toggle collapse
-                        if self.sidebar_collapsed.contains(id) {
-                            self.sidebar_collapsed.remove(id);
-                        } else {
-                            self.sidebar_collapsed.insert(*id);
-                        }
-                        // Re-populate category view since visibility changed.
                         self.populate_category_view(*id);
+                        if !self.category_view_articles.is_empty() {
+                            self.in_category_context = true;
+                            self.selected_article = 0;
+                            self.state = AppState::ArticleList;
+                        }
                     }
                     Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
                         self.selected_feed = *feeds_idx;
@@ -467,7 +464,9 @@ impl App {
                 }
             }
             AppState::ArticleList => {
-                let has_articles = if self.in_saved_context {
+                let has_articles = if self.in_category_context {
+                    !self.category_view_articles.is_empty()
+                } else if self.in_saved_context {
                     !self.saved_view_articles.is_empty()
                 } else {
                     self.feeds
@@ -477,10 +476,11 @@ impl App {
                 if has_articles {
                     self.state = AppState::ArticleDetail;
                     self.scroll_offset = 0;
-                    let content = if self.in_saved_context {
-                        self.saved_view_articles[self.selected_article]
-                            .content
-                            .clone()
+                    let content = if self.in_category_context {
+                        let (fi, ai) = self.category_view_articles[self.selected_article];
+                        self.feeds[fi].articles[ai].content.clone()
+                    } else if self.in_saved_context {
+                        self.saved_view_articles[self.selected_article].content.clone()
                     } else {
                         self.feeds[self.selected_feed].articles[self.selected_article]
                             .content
@@ -493,32 +493,46 @@ impl App {
         }
     }
 
-    /// Populate `category_view_items` for the given category id and mark it as selected.
+    /// Populate `category_view_articles` for the given category id and mark it as selected.
     pub fn populate_category_view(&mut self, cat_id: CategoryId) {
         self.selected_sidebar_category = Some(cat_id);
-        self.category_view_items.clear();
+        self.category_view_articles.clear();
 
+        // Collect (fi, ai, published_secs) avoiding simultaneous borrows.
         let feed_indices = feeds_in_category(cat_id, &self.categories, &self.feeds);
-        for feeds_idx in feed_indices {
-            let feed = &self.feeds[feeds_idx];
-            if feed.articles.is_empty() {
-                continue;
-            }
-            self.category_view_items
-                .push(CategoryViewItem::Header(feed.title.clone()));
-            for article_idx in 0..feed.articles.len() {
-                self.category_view_items.push(CategoryViewItem::Article {
-                    feeds_idx,
-                    article_idx,
-                });
+        let mut triples: Vec<(usize, usize, Option<i64>)> = Vec::new();
+        for fi in feed_indices {
+            for ai in 0..self.feeds[fi].articles.len() {
+                triples.push((fi, ai, self.feeds[fi].articles[ai].published_secs));
             }
         }
+        triples.sort_by(|a, b| match (a.2, b.2) {
+            (Some(x), Some(y)) => y.cmp(&x),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        });
+        self.category_view_articles = triples.into_iter().map(|(fi, ai, _)| (fi, ai)).collect();
     }
 
     /// Clear the category context (cursor moved off a category onto a feed).
     pub fn clear_category_view(&mut self) {
         self.selected_sidebar_category = None;
-        self.category_view_items.clear();
+        self.category_view_articles.clear();
+        self.in_category_context = false;
+    }
+
+    /// Toggle the collapsed state of a category in the sidebar.
+    pub fn toggle_category_collapse(&mut self, id: CategoryId) {
+        if self.sidebar_collapsed.contains(&id) {
+            self.sidebar_collapsed.remove(&id);
+        } else {
+            self.sidebar_collapsed.insert(id);
+        }
+        // Refresh the preview if still hovering over this category.
+        if self.selected_sidebar_category == Some(id) {
+            self.populate_category_view(id);
+        }
     }
 
     /// Populate `saved_view_articles` from the currently selected sidebar entry.
@@ -566,7 +580,11 @@ impl App {
     pub fn unselect(&mut self) {
         match self.state {
             AppState::ArticleList => {
-                if self.in_saved_context {
+                if self.in_category_context {
+                    // Return to FeedList; keep category_view_articles populated for preview.
+                    self.in_category_context = false;
+                    self.state = AppState::FeedList;
+                } else if self.in_saved_context {
                     self.in_saved_context = false;
                     self.saved_view_articles.clear();
                     self.state = AppState::SavedCategoryList;
