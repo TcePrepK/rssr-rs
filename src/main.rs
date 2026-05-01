@@ -187,6 +187,64 @@ async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()
     Ok(())
 }
 
+/// Merges archived articles from the previous fetch into the updated article list,
+/// applying the user's archive policy to drop articles older than the threshold.
+///
+/// Steps:
+/// - Carries forward already-archived articles not present in the new fetch.
+/// - Marks newly-absent, non-saved articles as archived.
+/// - Drops archived articles older than `archive_policy.threshold_secs()`.
+/// - Appends surviving archived articles to `articles`.
+fn apply_archive_policy(
+    articles: &mut Vec<models::Article>,
+    previous: &[models::Article],
+    archive_policy: &models::ArchivePolicy,
+    now_secs: i64,
+    read_links: &std::collections::HashSet<String>,
+    saved_articles: &[models::SavedArticle],
+) {
+    let new_links: std::collections::HashSet<&str> =
+        articles.iter().map(|a| a.link.as_str()).collect();
+
+    // Step A — carry forward already-archived articles absent from the new fetch.
+    let already_archived: Vec<models::Article> = previous
+        .iter()
+        .filter(|a| a.is_archived && !new_links.contains(a.link.as_str()))
+        .cloned()
+        .collect();
+
+    // Step B — newly archived: was present before, not saved, not in new fetch, not yet archived.
+    let newly_archived: Vec<models::Article> = previous
+        .iter()
+        .filter(|a| !a.is_archived && !a.is_saved && !new_links.contains(a.link.as_str()))
+        .map(|a| {
+            let mut art = a.clone();
+            art.is_archived = true;
+            art.is_read = !art.link.is_empty() && read_links.contains(&art.link);
+            art.is_saved =
+                !art.link.is_empty() && saved_articles.iter().any(|s| s.article.link == art.link);
+            art
+        })
+        .collect();
+
+    // Combine archived candidates, then apply the retention threshold (Step C).
+    let threshold = archive_policy.threshold_secs();
+    let surviving: Vec<models::Article> = already_archived
+        .into_iter()
+        .chain(newly_archived)
+        .filter(|a| {
+            let effective_ts = a.published_secs.unwrap_or(now_secs);
+            match threshold {
+                Some(t) => now_secs - effective_ts <= t,
+                None => true, // Forever — keep all
+            }
+        })
+        .collect();
+
+    // Step D — append surviving archived articles to the new article list.
+    articles.extend(surviving);
+}
+
 /// Handle a fetched feed result: merge read/starred state, update counts, save cache.
 fn on_feed_fetched(
     app: &mut app::App,
@@ -199,6 +257,11 @@ fn on_feed_fetched(
             let Some(feed) = app.feeds.get_mut(idx) else {
                 return;
             };
+
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
 
             // Preserve readability-enriched content for articles we already have.
             let preserved: std::collections::HashMap<String, String> = feed
@@ -255,17 +318,23 @@ fn on_feed_fetched(
                 articles.extend(missing_saved);
             }
 
+            // Apply archive policy: mark newly-absent articles as archived, carry forward
+            // previously-archived articles, and drop those older than the retention threshold.
+            apply_archive_policy(
+                &mut articles,
+                &feed.articles.clone(),
+                &app.user_data.archive_policy,
+                now_secs,
+                &app.user_data.read_links,
+                &app.user_data.saved_articles,
+            );
+
             feed.unread_count = articles.iter().filter(|a| !a.is_read).count();
             feed.articles = articles;
             feed.fetch_error = None;
             feed.fetched = true;
             feed.feed_updated_secs = xml_updated_secs;
-            feed.last_fetched_secs = Some(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0),
-            );
+            feed.last_fetched_secs = Some(now_secs);
         }
         Err(e) => {
             let feed_title = app
