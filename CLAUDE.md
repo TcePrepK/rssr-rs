@@ -25,8 +25,7 @@ rule), fix it in the same commit.
    within the same category; otherwise take the topmost incomplete item.
 3. **If anything is unclear**: stop and ask the user. Do not assume scope, layout, or behavior. Just ask directly in
    your response.
-4. **On completion**: remove the item from TASKS.md and append it to `changelog/vX.Y.Z.md` (current version,
-   e.g. `changelog/v0.1.0.md`). Create the file if it doesn't exist; use the heading `# vX.Y.Z`. The file uses
+4. **On completion**: remove the item from TASKS.md and append it to `changelog/next-update.md`. The file uses
    grouped sections (`## Features`, `## UI`, `## Fixes`, `## Refactor`). Each entry must include today's date:
    `- YYYY-MM-DD: Description`. Append new entries below older ones within each section. Never commit without
    doing this first. Never read the `changelog/` files — they are an append-only archive.
@@ -114,9 +113,12 @@ User may reply "y", adjust individual models, drop agents, or merge subtasks. In
 
 Use the `Agent` tool. Independent subtasks launch simultaneously. Sequential subtasks (B depends on A's output) chain.
 
-**One agent per file group:** Subtasks that all edit the same file must be merged into a single agent. Never split same-file changes across multiple agents — it causes redundant file reads and potential conflicts.
+**One agent per file group:** Subtasks that all edit the same file must be merged into a single agent. Never split
+same-file changes across multiple agents — it causes redundant file reads and potential conflicts.
 
-**Ollama dispatch uses `Bash`, not `Agent`:** Trivial tasks routed to `ollama` must be dispatched with the `Bash` tool running `ollama_agent.py`. The `Agent` tool always hits the Claude API regardless of any model label. Apply the returned content with `Edit` or `Write`.
+**Ollama dispatch uses `Bash`, not `Agent`:** Trivial tasks routed to `ollama` must be dispatched with the `Bash` tool
+running `ollama_agent.py`. The `Agent` tool always hits the Claude API regardless of any model label. Apply the returned
+content with `Edit` or `Write`.
 
 Each agent prompt must include:
 
@@ -143,6 +145,33 @@ On session start, pick **multiple tasks** when sensible — not just one. Batch 
 - Max batch: however many can be decomposed without subtask conflicts (shared file writes)
 - Present all selected tasks in the single dispatch plan table above
 - One combined approval covers all selected tasks
+
+---
+
+## AST Cache (rust-ast-extractor)
+
+The project is indexed with [`rust-ast-extractor`](../rust-ast-extractor). The cache lives in `.ast-cache/` (gitignored).
+
+**Before reading a source file**, check the cache first — it's faster and gives you signatures, docs, and line numbers without opening the file:
+
+```bash
+# Get structured summary of a file (items, signatures, docs)
+rust-ast-extractor get src/app.rs
+
+# Get raw source of one specific item
+rust-ast-extractor get src/app.rs::App
+rust-ast-extractor get src/handlers/feed_list.rs::handle_feed_list_input
+
+# Re-index after editing source files
+rust-ast-extractor index src/
+```
+
+**When to use it:**
+- Before asking "what does X function do?" — `get src/file.rs::fn_name` gives you the source instantly
+- When planning which files to touch — `get src/file.rs` shows all items with signatures and doc comments
+- After making changes — re-index so the cache stays current
+
+**Re-index rule:** Run `rust-ast-extractor index src/` at the start of any session where you plan to edit source files, or after any significant changes. The tool skips unchanged files, so it's fast.
 
 ---
 
