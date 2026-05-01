@@ -87,19 +87,29 @@ pub(super) fn handle_category_picker(app: &mut App, key: KeyEvent) {
             KeyCode::Enter => {
                 let name = app.category_picker_input.trim().to_string();
                 if !name.is_empty() {
-                    let new_id = app
+                    // Reuse existing category if same name already exists.
+                    let target_id = app
                         .user_data
                         .saved_categories
                         .iter()
+                        .find(|c| c.name.eq_ignore_ascii_case(&name))
                         .map(|c| c.id)
-                        .max()
-                        .unwrap_or(0)
-                        + 1;
-                    app.user_data.saved_categories.push(SavedCategory {
-                        id: new_id,
-                        name: name.clone(),
-                    });
-                    save_to_category(app, new_id);
+                        .unwrap_or_else(|| {
+                            let new_id = app
+                                .user_data
+                                .saved_categories
+                                .iter()
+                                .map(|c| c.id)
+                                .max()
+                                .unwrap_or(0)
+                                + 1;
+                            app.user_data.saved_categories.push(SavedCategory {
+                                id: new_id,
+                                name: name.clone(),
+                            });
+                            new_id
+                        });
+                    save_to_category(app, target_id);
                     app.set_status(format!("Saved to '{name}'!"));
                 }
                 app.category_picker_new_mode = false;
@@ -204,6 +214,9 @@ fn save_to_category(app: &mut App, category_id: u32) {
 
     update_is_saved_flag(app, true);
     let _ = save_user_data(&app.user_data);
+    if app.in_saved_context {
+        app.sync_saved_preview();
+    }
 }
 
 fn unsave_article(app: &mut App) {
