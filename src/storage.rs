@@ -1,3 +1,6 @@
+//! Disk I/O for brochure: reading and writing feeds, articles, user data, and categories, plus
+//! OPML import/export and path utilities for the platform-specific data directory.
+
 use crate::models::{Article, Category, CategoryId, FAVORITES_URL, Feed, UserData};
 use std::{collections::HashMap, fs, path::PathBuf};
 
@@ -20,15 +23,19 @@ fn data_dir() -> PathBuf {
     dir
 }
 
+/// Returns the full path to the feeds storage file.
 fn feeds_path() -> PathBuf {
     data_dir().join("feeds.json")
 }
+/// Returns the full path to the user data storage file.
 fn user_data_path() -> PathBuf {
     data_dir().join("user_data.json")
 }
+/// Returns the full path to the article cache file.
 fn articles_path() -> PathBuf {
     data_dir().join("articles.json")
 }
+/// Returns the full path to the categories storage file.
 fn categories_path() -> PathBuf {
     data_dir().join("categories.json")
 }
@@ -190,6 +197,7 @@ pub fn export_opml_to_path(
     Ok(())
 }
 
+/// Recursively writes OPML `<outline>` elements for all categories and feeds under `parent_id`.
 fn write_opml_level(
     out: &mut String,
     feeds: &[Feed],
@@ -229,6 +237,7 @@ fn write_opml_level(
     }
 }
 
+/// Escapes the four XML special characters (`&`, `"`, `<`, `>`) in a string for use in attributes.
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('"', "&quot;")
@@ -246,6 +255,8 @@ pub fn import_opml_from_path(
     parse_opml_xml(&content, existing_feeds, existing_categories)
 }
 
+/// Parses raw OPML XML, deduplicating against existing feeds and categories, and returns
+/// only the newly discovered feeds and categories.
 fn parse_opml_xml(
     content: &str,
     existing_feeds: &[Feed],

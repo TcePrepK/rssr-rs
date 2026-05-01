@@ -1,3 +1,5 @@
+//! Application entry point. Initializes the terminal, sets up the Tokio runtime, spawns background tasks (feed and image fetches), and drives the main MPSC event loop that coordinates Ratatui rendering with input handling.
+
 mod app;
 mod fetch;
 mod handlers;
@@ -17,6 +19,7 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, time::Duration};
 use tokio::sync::mpsc;
 
+/// Entry point for the application. Sets up terminal raw mode, alternate screen, mouse capture, and delegates to `run()` for the main event loop.
 #[tokio::main]
 async fn main() -> Result<()> {
     enable_raw_mode()?;
@@ -38,6 +41,7 @@ async fn main() -> Result<()> {
     result
 }
 
+/// Main event loop. Loads cached articles, spawns background fetch tasks, and continuously processes input events, feed updates, and UI ticks until the user quits.
 async fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
     let mut app = app::App::new();
     let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();

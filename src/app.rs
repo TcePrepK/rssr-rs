@@ -1,3 +1,8 @@
+//! Central application state and navigation logic.
+//!
+//! Owns the [`App`] struct (passed to every draw frame and input handler) and all
+//! navigation methods: cursor movement, tab switching, tree traversal, and scroll management.
+
 use crate::models::{
     AddFeedStep, AppState, Article, Category, CategoryId, EditorPanel, FAVORITES_URL, Feed,
     FeedEditorMode, FeedTreeItem, ListScroll, SettingsItem, Tab, TextScroll, UserData,
@@ -137,6 +142,7 @@ pub struct App {
 }
 
 impl App {
+    /// Construct a fresh `App`, loading feeds, categories, and user data from disk.
     pub fn new() -> Self {
         let user_data = load_user_data();
         let feeds = load_feeds();
@@ -226,16 +232,19 @@ impl App {
 
     // ── Tab switching ────────────────────────────────────────────────────────
 
+    /// Switch to the previous tab (wraps from Feeds back to the last tab).
     pub fn switch_tab_left(&mut self) {
         self.selected_tab = self.selected_tab.prev();
         self.apply_tab_state();
     }
 
+    /// Switch to the next tab (wraps from the last tab back to Feeds).
     pub fn switch_tab_right(&mut self) {
         self.selected_tab = self.selected_tab.next();
         self.apply_tab_state();
     }
 
+    /// Synchronise `state` and saved-context flags to match `selected_tab` after a tab switch.
     fn apply_tab_state(&mut self) {
         self.in_saved_context = false;
         self.state = match self.selected_tab {
@@ -729,6 +738,8 @@ pub fn visible_cat_only_items(
         .collect()
 }
 
+/// Like [`visible_tree_items`] but restricts feed rows to those whose index is in `feed_filter`.
+/// Categories with no visible descendants under the filter are also omitted.
 fn visible_tree_items_filtered(
     categories: &[Category],
     feeds: &[Feed],
@@ -766,6 +777,9 @@ fn visible_tree_items_filtered(
     result
 }
 
+/// Recursively append one depth level of the category/feed tree to `result`.
+///
+/// Children of a collapsed category are skipped. Feed rows respect `feed_filter` when present.
 fn collect_tree_level(
     categories: &[Category],
     feeds: &[Feed],
@@ -846,6 +860,7 @@ fn category_has_visible_feeds(
 mod tests {
     use super::*;
 
+    /// Build a minimal `Article` with only a title set; all other fields are empty/default.
     fn mock_article(title: &str) -> Article {
         Article {
             title: title.to_string(),
@@ -860,6 +875,7 @@ mod tests {
         }
     }
 
+    /// Return an `App` pre-loaded with one uncategorised feed containing two articles.
     fn app_with_feed() -> App {
         let mut app = App::new();
         // Clear any disk-loaded state so tests are isolated

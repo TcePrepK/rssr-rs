@@ -1,6 +1,10 @@
+//! Async network I/O for brochure: feed fetching, image URL extraction, and Readability-based
+//! article content retrieval. All HTTP requests share a single lazily-initialised client.
+
 use crate::models::Article;
 use std::sync::OnceLock;
 
+/// Returns the shared, lazily-initialised HTTP client used for all outgoing requests.
 fn http_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
@@ -11,11 +15,13 @@ fn http_client() -> &'static reqwest::Client {
     })
 }
 
+/// Returns the compiled regex used to extract the first `https` image URL from HTML content.
 fn img_url_re() -> &'static regex::Regex {
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r#"<img[^>]+src=["'](https?://[^"']+)["']"#).unwrap())
 }
 
+/// Strips a UTF-8 BOM (`EF BB BF`) from the start of a byte slice if one is present.
 fn strip_bom(bytes: &[u8]) -> &[u8] {
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
         &bytes[3..]
