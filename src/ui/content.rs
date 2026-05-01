@@ -355,13 +355,8 @@ pub(super) fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
                 FeedTreeItem::Feed { feeds_idx, depth } => {
                     let feed = &app.feeds[*feeds_idx];
                     let indent = tree_indent(&tree, render_idx, *depth);
-                    let connector = tree_connector(
-                        &tree,
-                        render_idx,
-                        *depth,
-                        app.user_data.border_rounded,
-                        "",
-                    );
+                    let connector =
+                        tree_connector(&tree, render_idx, *depth, app.user_data.border_rounded, "");
                     let count_str = feed.unread_badge();
                     let style = if selected {
                         Style::default()
