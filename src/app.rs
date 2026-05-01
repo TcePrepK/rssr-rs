@@ -612,6 +612,7 @@ impl App {
             }
             AppState::ClearData => self.state = AppState::SettingsList,
             AppState::SavedCategoryList => {
+                self.in_saved_context = false;
                 self.selected_tab = Tab::Feeds;
                 self.state = AppState::FeedList;
             }
