@@ -270,11 +270,9 @@ impl App {
             }
             AppState::SavedCategoryList => {
                 let count = 1 + self.user_data.saved_categories.len();
-                if count > 0 {
-                    self.saved_sidebar_cursor = (self.saved_sidebar_cursor + 1) % count;
-                    self.sidebar_title_start_tick = self.tick;
-                    self.sync_saved_preview();
-                }
+                self.saved_sidebar_cursor = (self.saved_sidebar_cursor + 1) % count;
+                self.sidebar_title_start_tick = self.tick;
+                self.sync_saved_preview();
             }
             AppState::FeedEditor => {
                 if self.editor_panel == EditorPanel::Categories {
@@ -355,14 +353,12 @@ impl App {
             }
             AppState::SavedCategoryList => {
                 let count = 1 + self.user_data.saved_categories.len();
-                if count > 0 {
-                    self.saved_sidebar_cursor = self
-                        .saved_sidebar_cursor
-                        .checked_sub(1)
-                        .unwrap_or(count - 1);
-                    self.sidebar_title_start_tick = self.tick;
-                    self.sync_saved_preview();
-                }
+                self.saved_sidebar_cursor = self
+                    .saved_sidebar_cursor
+                    .checked_sub(1)
+                    .unwrap_or(count - 1);
+                self.sidebar_title_start_tick = self.tick;
+                self.sync_saved_preview();
             }
             AppState::FeedEditor => {
                 if self.editor_panel == EditorPanel::Categories {
