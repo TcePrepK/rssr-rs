@@ -205,7 +205,7 @@ fn draw_saved_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(TEXT)
     };
     items.push(ListItem::new(Line::from(vec![
-        Span::styled("★ All Saved ", all_style),
+        Span::styled("🞴 All Saved ", all_style),
         Span::styled(format!("[{total_saved}]"), Style::default().fg(SUBTEXT0)),
     ])));
 
@@ -312,7 +312,7 @@ pub(super) fn draw_sidebar(f: &mut Frame, app: &mut App, area: Rect) {
                         Style::default().fg(TEXT)
                     };
                     ListItem::new(Line::from(vec![
-                        Span::styled("  ★ All Feeds ", style),
+                        Span::styled("🞴 All Feeds ", style),
                         Span::styled(format!("[{total_unread}]"), Style::default().fg(SUBTEXT0)),
                     ]))
                 }
@@ -598,7 +598,7 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect, show_f
     if app.in_category_context {
         // Derive the category name from the sidebar selection for the panel title.
         let cat_name: String = if app.in_all_feeds_context {
-            "★ All Feeds".to_string()
+            "🞴 All Feeds".to_string()
         } else {
             app.selected_sidebar_category
                 .and_then(|id| app.categories.iter().find(|c| c.id == id))
@@ -718,7 +718,7 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect, show_f
         return;
     }
 
-    let (feed_title, articles): (String, &[crate::models::Article]) = if app.in_saved_context {
+    let (feed_title, articles): (String, &[Article]) = if app.in_saved_context {
         let title = if let Some(cat_id) = app.selected_saved_category {
             app.user_data
                 .saved_categories
@@ -727,7 +727,7 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect, show_f
                 .map(|c| format!(" {} ", c.name))
                 .unwrap_or_else(|| " Saved ".to_string())
         } else {
-            " ★ All Saved ".to_string()
+            " 🞴 All Saved ".to_string()
         };
         (title, app.saved_view_articles.as_slice())
     } else {
