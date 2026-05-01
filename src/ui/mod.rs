@@ -5,7 +5,7 @@ mod popups;
 mod settings;
 
 use crate::app::App;
-use crate::models::{AppState, Tab};
+use crate::models::{AppState, FeedTreeItem, Tab};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::Color,
@@ -38,6 +38,37 @@ pub(crate) fn border_set(rounded: bool) -> symbols::border::Set<'static> {
 
 /// Fixed palette for category headers (cycles by category id).
 pub(crate) const CATEGORY_COLORS: &[Color] = &[MAUVE, BLUE, GREEN, PEACH, YELLOW, TEAL, SKY, PINK];
+
+/// Compute the leading indent string for a tree item at `depth` positioned at `render_idx`.
+/// For each ancestor level (1 to depth-1), emits "│  " if that level still has siblings
+/// after the current item, or "   " if it was the last child.
+pub(crate) fn tree_indent(tree: &[FeedTreeItem], render_idx: usize, depth: u8) -> String {
+    if depth <= 1 {
+        return String::new();
+    }
+    let mut s = String::new();
+    for level in 1..depth {
+        let next_at_level = tree[render_idx + 1..]
+            .iter()
+            .find(|n| {
+                let d = match n {
+                    FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => {
+                        *depth
+                    }
+                };
+                d <= level
+            })
+            .map(|n| match n {
+                FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => *depth,
+            });
+        if next_at_level == Some(level) {
+            s.push_str("│  ");
+        } else {
+            s.push_str("   ");
+        }
+    }
+    s
+}
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
