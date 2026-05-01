@@ -103,6 +103,23 @@ data.
 
 ---
 
+## Commit Discipline (mandatory)
+
+Every commit must be **atomic** — one logical change per commit. Never bundle unrelated changes.
+
+| Type | What belongs together |
+|------|----------------------|
+| `feat:` | Only the source files implementing that feature |
+| `fix:` | Only the files containing the bug fix |
+| `docs:` | Only documentation/config files (CLAUDE.md, README, etc.) |
+| `chore:` | Only task tracking files (TASKS.md) |
+| `test:` | Only test files |
+
+**Split before committing** — if you changed src files AND docs AND TASKS.md, that is at minimum 3 commits.
+Never combine a `feat` or `fix` with `docs` or `chore` in one commit.
+
+---
+
 ## Testing Workflow (mandatory before reporting done)
 
 ```
