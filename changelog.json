@@ -9,5 +9,16 @@
       "Added toggle to control list wrap-around scrolling.",
       "Fixed clipping issues in article title previews."
     ]
+  },
+  {
+    "version": "0.3.1",
+    "date": "2026-04-30",
+    "summary": "This update introduces better visibility into content history and improves the user experience across category and saved views.",
+    "highlights": [
+      "New Changelog+About tab shows version history.",
+      "Added age column to article previews.",
+      "Improved category view footer with stats.",
+      "Better performance for saved and category content."
+    ]
   }
 ]
