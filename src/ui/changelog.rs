@@ -30,7 +30,7 @@ struct ChangelogEntry {
 pub(super) fn draw_changelog_tab(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(9), Constraint::Min(0)])
+        .constraints([Constraint::Length(8), Constraint::Min(0)])
         .split(area);
 
     draw_about_block(f, app, chunks[0]);
