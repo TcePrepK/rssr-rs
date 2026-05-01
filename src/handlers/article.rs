@@ -37,7 +37,9 @@ pub(super) async fn handle_article(
                 let max = app
                     .content_line_count
                     .saturating_sub(app.content_area_height as usize) as u16;
-                app.scroll_offset = (app.scroll_offset + 1).min(max);
+                if let Some(article) = get_selected_article(app) {
+                    app.article_scroll.scroll_down(&article.link, max);
+                }
             } else {
                 app.next();
                 if app.state == AppState::ArticleList {
@@ -47,7 +49,9 @@ pub(super) async fn handle_article(
         }
         KeyCode::Up => {
             if app.state == AppState::ArticleDetail {
-                app.scroll_offset = app.scroll_offset.saturating_sub(1);
+                if let Some(article) = get_selected_article(app) {
+                    app.article_scroll.scroll_up(&article.link);
+                }
             } else {
                 app.previous();
                 if app.state == AppState::ArticleList {
