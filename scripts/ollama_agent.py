@@ -26,24 +26,15 @@ SYSTEM_PROMPT = (
 )
 
 
-def check_ollama_running() -> bool:
-    try:
-        urllib.request.urlopen(f"{OLLAMA_BASE}/api/tags", timeout=5)
-        return True
-    except Exception:
-        return False
-
-
-def check_model_available(model: str) -> bool:
+def check_ollama_and_model(model: str) -> tuple[bool, bool]:
     try:
         resp = urllib.request.urlopen(f"{OLLAMA_BASE}/api/tags", timeout=5)
         data = json.loads(resp.read())
         names = [m["name"] for m in data.get("models", [])]
-        # Match on base name (e.g. "qwen2.5-coder:7b" matches "qwen2.5-coder:7b-instruct-q4_K_M")
         base = model.split(":")[0]
-        return any(n.startswith(base) for n in names)
+        return True, any(n.startswith(base) for n in names)
     except Exception:
-        return False
+        return False, False
 
 
 def strip_fences(content: str) -> str:
@@ -57,8 +48,15 @@ def strip_fences(content: str) -> str:
 
 
 def is_truncated(content: str) -> bool:
-    """Heuristic: unbalanced braces suggest the response was cut off."""
-    return content.count("{") > content.count("}")
+    """
+    Heuristic: detect likely truncated responses.
+    Checks both brace balance and whether the file ends at a plausible boundary.
+    NOTE: may produce false positives if the file contains unbalanced braces
+    in string literals or comments. Treat as a soft signal, not a guarantee.
+    """
+    stripped = content.rstrip()
+    last_char = stripped[-1] if stripped else ""
+    return content.count("{") > content.count("}") or last_char not in ("}", ";", ")")
 
 
 def call_ollama(model: str, file_path: str, file_content: str, instruction: str, context_files: list) -> str:
@@ -67,7 +65,7 @@ def call_ollama(model: str, file_path: str, file_content: str, instruction: str,
         parts = [f"// {cf['path']}\n{cf['content']}" for cf in context_files]
         context_section = "\n\nContext files (read-only reference):\n" + "\n\n".join(parts)
 
-    user_message = f"File: {file_path}\n{file_content}{context_section}\n\nInstruction: {instruction}"
+    user_message = f"File: {file_path}\n\n{file_content}\n{context_section}\n\nInstruction: {instruction}"
 
     payload = json.dumps({
         "model": model,
@@ -86,7 +84,10 @@ def call_ollama(model: str, file_path: str, file_content: str, instruction: str,
 
     with urllib.request.urlopen(req, timeout=120) as resp:
         data = json.loads(resp.read())
-        return data["message"]["content"]
+        try:
+            return data["message"]["content"]
+        except KeyError:
+            raise ValueError(f"unexpected Ollama response shape: {data}")
 
 
 def main():
@@ -104,6 +105,10 @@ def main():
     file_path = input_data.get("file", "")
     instruction = input_data.get("instruction", "")
     context_file_paths = input_data.get("context_files", [])
+
+    if not isinstance(context_file_paths, list):
+        print(json.dumps({"error": "context_files must be a list"}))
+        sys.exit(1)
 
     if not file_path or not instruction:
         print(json.dumps({"error": "missing required fields: file, instruction"}))
@@ -127,12 +132,12 @@ def main():
             print(json.dumps({"error": f"cannot read context file {cf_path}: {e}"}))
             sys.exit(1)
 
-    # Check Ollama availability
-    if not check_ollama_running():
+    # Check Ollama availability and model
+    is_up, model_available = check_ollama_and_model(args.model)
+    if not is_up:
         print(json.dumps({"error": "ollama unavailable"}))
         sys.exit(1)
-
-    if not check_model_available(args.model):
+    if not model_available:
         print(json.dumps({"error": f"model not found: {args.model}"}))
         sys.exit(1)
 
