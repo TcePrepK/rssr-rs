@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-    app::{App, visible_tree_items},
+    app::{App, sidebar_tree_items},
     fetch::fetch_feed,
     models::{AppEvent, AppState, FeedEditorMode, FeedTreeItem},
 };
@@ -77,27 +77,45 @@ pub(super) fn handle_feed_list(
             app.sidebar_cursor = 0;
             app.sidebar_title_start_tick = app.tick;
 
-            let items = visible_tree_items(&app.categories, &app.feeds, &app.sidebar_collapsed);
-            if let Some(FeedTreeItem::Feed { feeds_idx, .. }) = items.first() {
-                app.selected_feed = *feeds_idx;
+            let items = sidebar_tree_items(&app.categories, &app.feeds, &app.sidebar_collapsed);
+            match items.first() {
+                Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
+                    app.selected_feed = *feeds_idx;
+                }
+                Some(FeedTreeItem::AllFeeds) => {
+                    app.populate_all_feeds_view();
+                }
+                _ => {}
             }
         }
         KeyCode::Char('C') => {
-            // Collapse all categories
-            for category in &app.categories {
-                app.sidebar_collapsed.insert(category.id);
+            // Toggle collapse/expand all categories
+            let all_collapsed = app
+                .categories
+                .iter()
+                .all(|c| app.sidebar_collapsed.contains(&c.id));
+            if all_collapsed {
+                app.sidebar_collapsed.clear();
+            } else {
+                for category in &app.categories {
+                    app.sidebar_collapsed.insert(category.id);
+                }
             }
-
             app.sidebar_cursor = 0;
             app.sidebar_title_start_tick = app.tick;
-
-            let items = visible_tree_items(&app.categories, &app.feeds, &app.sidebar_collapsed);
-            if let Some(FeedTreeItem::Feed { feeds_idx, .. }) = items.first() {
-                app.selected_feed = *feeds_idx;
+            let items = sidebar_tree_items(&app.categories, &app.feeds, &app.sidebar_collapsed);
+            match items.first() {
+                Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
+                    app.selected_feed = *feeds_idx;
+                }
+                Some(FeedTreeItem::AllFeeds) => {
+                    app.populate_all_feeds_view();
+                }
+                _ => {}
             }
         }
         KeyCode::Char(' ') => {
-            let items = visible_tree_items(&app.categories, &app.feeds, &app.sidebar_collapsed);
+            let items = sidebar_tree_items(&app.categories, &app.feeds, &app.sidebar_collapsed);
             if let Some(FeedTreeItem::Category { id, .. }) = items.get(app.sidebar_cursor) {
                 app.toggle_category_collapse(*id);
             }
