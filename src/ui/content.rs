@@ -420,7 +420,7 @@ pub(super) fn draw_article_list(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .border_set(border_set(app.user_data.border_rounded))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(SURFACE0))
+        .border_style(Style::default().fg(if is_navigating { MAUVE } else { SURFACE0 }))
         .bg(BASE)
         .title(Span::styled(
             feed_title,
@@ -624,7 +624,7 @@ pub(super) fn draw_article_detail(f: &mut Frame, app: &mut App, area: Rect, is_p
     let block = Block::default()
         .border_set(border_set(app.user_data.border_rounded))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(MAUVE))
+        .border_style(Style::default().fg(if is_preview { SURFACE0 } else { MAUVE }))
         .bg(BASE)
         .title(Span::styled(
             detail_title,
