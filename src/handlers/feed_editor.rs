@@ -63,7 +63,7 @@ pub(super) fn handle_feed_editor(app: &mut App, key: KeyEvent, _tx: &UnboundedSe
                                     }
                                     let _ = save_feeds(&app.feeds);
                                 }
-                                None => {}
+                                Some(FeedTreeItem::AllFeeds) | None => {}
                             }
                         }
                         FeedEditorMode::EditingUrl { render_idx } => {
@@ -633,7 +633,7 @@ fn apply_move(app: &mut App, origin: usize) -> Option<usize> {
         Some(FeedTreeItem::Feed { feeds_idx: di, .. }) => {
             app.feeds.get(*di).and_then(|f| f.category_id)
         }
-        None => None,
+        Some(FeedTreeItem::AllFeeds) | None => None,
     };
     let dest_feed_vidx = match dest_item {
         Some(FeedTreeItem::Feed { feeds_idx: di, .. }) => Some(*di),

@@ -109,6 +109,8 @@ pub struct App {
     pub category_view_articles: Vec<(usize, usize)>,
     /// True while ArticleList/ArticleDetail is showing the category-context article list.
     pub in_category_context: bool,
+    /// True when `category_view_articles` holds all-feeds content rather than a real category.
+    pub in_all_feeds_context: bool,
 
     // ── Cache ────────────────────────────────────────────────────────────────
     /// Byte size of articles.json; refreshed at startup and after cache clear.
@@ -158,8 +160,8 @@ impl App {
         let categories = load_categories();
 
         // Sync initial selected_feed with the first real (non-Favorites) feed in the visible tree.
-        let initial_items = visible_tree_items(&categories, &feeds, &HashSet::new());
-        let selected_feed = initial_items
+        let initial_sidebar = sidebar_tree_items(&categories, &feeds, &HashSet::new());
+        let selected_feed = initial_sidebar
             .iter()
             .find_map(|item| {
                 if let FeedTreeItem::Feed { feeds_idx, .. } = item {
@@ -170,7 +172,9 @@ impl App {
             })
             .unwrap_or(0);
 
-        let initial_editor_cursor = initial_items
+        // Editor cursor uses the non-AllFeeds tree (editor never shows AllFeeds).
+        let initial_editor_items = visible_tree_items(&categories, &feeds, &HashSet::new());
+        let initial_editor_cursor = initial_editor_items
             .iter()
             .position(|item| matches!(item, FeedTreeItem::Feed { .. }))
             .unwrap_or(0);
@@ -219,6 +223,7 @@ impl App {
             selected_sidebar_category: None,
             category_view_articles: Vec::new(),
             in_category_context: false,
+            in_all_feeds_context: false,
             article_cache_size: article_cache_size(),
             editor_cursor: initial_editor_cursor,
             editor_collapsed: HashSet::new(),
@@ -235,9 +240,11 @@ impl App {
             article_title_start_tick: 0,
         };
 
-        // If the sidebar cursor starts on a category, initialise the category preview.
-        if let Some(FeedTreeItem::Category { id, .. }) = initial_items.first() {
-            app.populate_category_view(*id);
+        // Sidebar cursor starts at 0 = AllFeeds; populate the all-feeds view immediately.
+        match initial_sidebar.first() {
+            Some(FeedTreeItem::AllFeeds) => app.populate_all_feeds_view(),
+            Some(FeedTreeItem::Category { id, .. }) => app.populate_category_view(*id),
+            _ => {}
         }
 
         app
@@ -276,8 +283,9 @@ impl App {
             self.sync_saved_preview();
         }
         if self.selected_tab == Tab::Feeds {
-            let items = visible_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
+            let items = sidebar_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
             match items.get(self.sidebar_cursor) {
+                Some(FeedTreeItem::AllFeeds) => self.populate_all_feeds_view(),
                 Some(FeedTreeItem::Category { id, .. }) => self.populate_category_view(*id),
                 Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
                     self.selected_feed = *feeds_idx;
@@ -295,7 +303,7 @@ impl App {
         match self.state {
             AppState::FeedList => {
                 let items =
-                    visible_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
+                    sidebar_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
                 if items.is_empty() {
                     return;
                 }
@@ -309,6 +317,9 @@ impl App {
                 }
                 self.sidebar_title_start_tick = self.tick;
                 match items.get(self.sidebar_cursor) {
+                    Some(FeedTreeItem::AllFeeds) => {
+                        self.populate_all_feeds_view();
+                    }
                     Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
                         self.selected_feed = *feeds_idx;
                         self.selected_article = 0;
@@ -409,7 +420,7 @@ impl App {
         match self.state {
             AppState::FeedList => {
                 let items =
-                    visible_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
+                    sidebar_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
                 if items.is_empty() {
                     return;
                 }
@@ -427,6 +438,9 @@ impl App {
                 self.sidebar_title_start_tick = self.tick;
 
                 match items.get(self.sidebar_cursor) {
+                    Some(FeedTreeItem::AllFeeds) => {
+                        self.populate_all_feeds_view();
+                    }
                     Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
                         self.selected_feed = *feeds_idx;
                         self.selected_article = 0;
@@ -535,8 +549,15 @@ impl App {
         match self.state {
             AppState::FeedList => {
                 let items =
-                    visible_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
+                    sidebar_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
                 match items.get(self.sidebar_cursor) {
+                    Some(FeedTreeItem::AllFeeds) => {
+                        self.populate_all_feeds_view();
+                        if !self.category_view_articles.is_empty() {
+                            self.selected_article = 0;
+                            self.state = AppState::ArticleList;
+                        }
+                    }
                     Some(FeedTreeItem::Category { id, .. }) => {
                         self.populate_category_view(*id);
                         if !self.category_view_articles.is_empty() {
@@ -618,6 +639,31 @@ impl App {
         self.selected_sidebar_category = None;
         self.category_view_articles.clear();
         self.in_category_context = false;
+        self.in_all_feeds_context = false;
+    }
+
+    /// Populate `category_view_articles` with every article across all non-favorites feeds,
+    /// sorted newest-first. Sets `in_category_context` and `in_all_feeds_context`.
+    pub fn populate_all_feeds_view(&mut self) {
+        self.selected_sidebar_category = None;
+        self.in_all_feeds_context = true;
+        let mut triples: Vec<(usize, usize, Option<i64>)> = Vec::new();
+        for (fi, feed) in self.feeds.iter().enumerate() {
+            if feed.url == FAVORITES_URL {
+                continue;
+            }
+            for ai in 0..feed.articles.len() {
+                triples.push((fi, ai, feed.articles[ai].published_secs));
+            }
+        }
+        triples.sort_by(|a, b| match (a.2, b.2) {
+            (Some(x), Some(y)) => y.cmp(&x),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        });
+        self.category_view_articles = triples.into_iter().map(|(fi, ai, _)| (fi, ai)).collect();
+        self.in_category_context = true;
     }
 
     /// Toggle the collapsed state of a category in the sidebar.
@@ -728,8 +774,9 @@ impl App {
                 self.selected_tab = Tab::Feeds;
                 self.state = AppState::FeedList;
                 let items =
-                    visible_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
+                    sidebar_tree_items(&self.categories, &self.feeds, &self.sidebar_collapsed);
                 match items.get(self.sidebar_cursor) {
+                    Some(FeedTreeItem::AllFeeds) => self.populate_all_feeds_view(),
                     Some(FeedTreeItem::Category { id, .. }) => self.populate_category_view(*id),
                     Some(FeedTreeItem::Feed { feeds_idx, .. }) => {
                         self.selected_feed = *feeds_idx;
@@ -766,6 +813,20 @@ pub fn visible_tree_items(
     collapsed: &HashSet<CategoryId>,
 ) -> Vec<FeedTreeItem> {
     visible_tree_items_filtered(categories, feeds, collapsed, None)
+}
+
+/// Like [`visible_tree_items`] but prepends the virtual `AllFeeds` entry at index 0.
+///
+/// Use this for the main sidebar; use [`visible_tree_items`] for the feed editor and other
+/// contexts where `AllFeeds` should not appear.
+pub fn sidebar_tree_items(
+    categories: &[Category],
+    feeds: &[Feed],
+    collapsed: &HashSet<CategoryId>,
+) -> Vec<FeedTreeItem> {
+    let mut items = visible_tree_items_filtered(categories, feeds, collapsed, None);
+    items.insert(0, FeedTreeItem::AllFeeds);
+    items
 }
 
 /// Collects feed indices for all feeds directly or transitively under `cat_id`,

@@ -77,6 +77,7 @@ pub(crate) fn tree_indent(tree: &[FeedTreeItem], render_idx: usize, depth: u8) -
             .iter()
             .find(|n| {
                 let d = match n {
+                    FeedTreeItem::AllFeeds => 0,
                     FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => {
                         *depth
                     }
@@ -84,6 +85,7 @@ pub(crate) fn tree_indent(tree: &[FeedTreeItem], render_idx: usize, depth: u8) -
                 d <= level
             })
             .map(|n| match n {
+                FeedTreeItem::AllFeeds => 0,
                 FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => *depth,
             });
         if next_at_level == Some(level) {
@@ -111,12 +113,14 @@ pub(crate) fn tree_connector(
         .iter()
         .find(|n| {
             let d = match n {
+                FeedTreeItem::AllFeeds => 0,
                 FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => *depth,
             };
             d <= depth
         })
         .is_none_or(|n| {
             let d = match n {
+                FeedTreeItem::AllFeeds => 0,
                 FeedTreeItem::Feed { depth, .. } | FeedTreeItem::Category { depth, .. } => *depth,
             };
             d < depth

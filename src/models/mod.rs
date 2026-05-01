@@ -44,6 +44,8 @@ pub struct Category {
 /// One visible row in the flattened category/feed tree.
 #[derive(Debug, Clone)]
 pub enum FeedTreeItem {
+    /// Virtual entry always shown at the top of the sidebar — selects all articles across all feeds.
+    AllFeeds,
     /// A category node with its tree depth and collapse state.
     Category {
         /// The category's unique ID.

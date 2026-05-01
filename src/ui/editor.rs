@@ -105,6 +105,9 @@ fn draw_editor_feeds(f: &mut Frame, app: &mut App, area: Rect) {
 
     for (full_idx, item) in tree.iter().enumerate() {
         match item {
+            FeedTreeItem::AllFeeds => {
+                // AllFeeds never appears in the editor tree; skip gracefully.
+            }
             FeedTreeItem::Category {
                 id,
                 depth,
